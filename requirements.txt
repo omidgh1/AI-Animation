@@ -1,0 +1,22 @@
+# AI Kids Video Generator — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ── AI APIs ──────────────────────────────────
+anthropic>=0.30.0          # Claude — story, refinement, motion prompts
+fal-client>=0.4.0          # Fal.ai — Flux image generation
+elevenlabs>=1.5.0          # Voice narration
+
+# ── Video & Audio ─────────────────────────────
+moviepy>=1.0.3             # Video editing
+pydub>=0.25.1              # Audio mixing
+ffmpeg-python>=0.2.0       # FFmpeg control
+Pillow>=10.0.0             # Image processing, thumbnails
+
+# ── Utilities ────────────────────────────────
+pydantic>=2.0.0            # Data models and validation
+tenacity>=8.2.0            # API retry logic
+python-dotenv>=1.0.0       # .env loading
+aiohttp>=3.9.0             # Async HTTP calls
+requests>=2.31.0           # HTTP utility
+tqdm>=4.66.0               # Progress bars
+websocket-client>=1.6.0    # ComfyUI WebSocket (optional)

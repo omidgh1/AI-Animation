@@ -274,14 +274,18 @@ class ThumbnailGenerator:
 
         results = {}
         sizes = [
-            ("landscape_16_9", "thumbnail_16x9.png",  "YouTube (1280x720)"),
-            ("portrait_16_9",  "thumbnail_9x16.png",  "Shorts  (1080x1920)"),
+            ("landscape_16_9", "thumbnail_16x9.png",  "YouTube (1280×720)"),
+            ("portrait_16_9",  "thumbnail_9x16.png",  "Shorts  (1080×1920)"),
         ]
 
+        # Run both thumbnails in parallel inside ONE asyncio.run() call.
+        # Running them sequentially inside a coroutine caused "Event loop is closed"
+        # because fal_client.submit_async tried to create a new loop after the first
+        # await completed and the outer loop had been torn down between iterations.
         async def run_all():
-            for image_size, filename, label in sizes:
+            async def generate_and_report(image_size: str, filename: str, label: str):
                 output_path = out_dir / filename
-                print(f"  Generating {label}...", end="", flush=True)
+                print(f"  Generating {label}...")
                 t = time.time()
                 ok = await self._generate_one(
                     prompt, neg_prompt, image_size, output_path
@@ -289,10 +293,24 @@ class ThumbnailGenerator:
                 elapsed = round(time.time() - t, 1)
                 if ok:
                     size_kb = output_path.stat().st_size // 1024
-                    print(f"\r  ✅  {label}  [{size_kb}KB]  {elapsed}s         ")
-                    results[image_size.split("_")[0]] = output_path
+                    print(f"  ✅  {label}  [{size_kb}KB]  {elapsed}s")
+                    return image_size.split("_")[0], output_path
                 else:
-                    print(f"\r  ❌  {label} failed                              ")
+                    print(f"  ❌  {label} failed")
+                    return image_size.split("_")[0], None
+
+            # Both requests go to Fal.ai simultaneously — same total time as one
+            tasks = [
+                generate_and_report(image_size, filename, label)
+                for image_size, filename, label in sizes
+            ]
+            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for r in task_results:
+                if isinstance(r, Exception):
+                    print(f"  ❌  Thumbnail task error: {r}")
+                elif r[1] is not None:
+                    results[r[0]] = r[1]
 
         asyncio.run(run_all())
 

@@ -127,7 +127,25 @@ def get_audio_duration(audio_path: Path) -> float:
         result = subprocess.run(cmd, capture_output=True, text=True)
         return float(result.stdout.strip())
     except Exception:
-        return 5.0  # fallback
+        return float(config.SCENE_DURATION_SEC)  # fallback
+
+
+def _get_stream_duration(media_path: Path) -> float:
+    """
+    Get duration of any media file (audio OR video) using FFprobe.
+    Used to compare video length vs final_mix.mp3 length before combining.
+    """
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(media_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return float(result.stdout.strip())
+    except Exception:
+        return 0.0
 
 
 def get_camera_filter(camera_movement: str, duration: float) -> str:
@@ -607,21 +625,55 @@ class VideoRenderer:
             print("  Replacing audio with final mix (narration + music)...", end="", flush=True)
             t_music = time.time()
             music_concat_path = out_dir / f"{refined.slug}_music.mp4"
-            ok = run_ffmpeg([
-                "-i", str(concat_path),       # video track (with old narration audio)
-                "-i", str(music_path),         # final_mix: narration + music
-                "-map", "0:v",                 # take VIDEO from concat
-                "-map", "1:a",                 # take AUDIO from final_mix ONLY
-                "-c:v", "copy",                # copy video stream (no re-encode)
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-shortest",                   # stop at shortest stream
-                str(music_concat_path),
-            ], label="audio replace")
+
+            # Get durations to decide how to handle length mismatch.
+            # final_mix.mp3 has intro + narration + outro padding built in by Stage 5,
+            # so it is intentionally LONGER than the raw concatenated video.
+            # We extend the last video frame to cover the full audio length.
+            # DO NOT use -shortest — that would cut audio off at video end.
+            video_dur = _get_stream_duration(concat_path)
+            audio_dur = _get_stream_duration(music_path)
+
+            if audio_dur > video_dur + 0.1:
+                # Audio is longer (normal case — has outro tail).
+                # Extend last video frame to cover the full audio length.
+                ok = run_ffmpeg([
+                    "-i", str(concat_path),
+                    "-i", str(music_path),
+                    "-filter_complex",
+                    # tpad extends the video by holding the last frame
+                    f"[0:v]tpad=stop_mode=clone:stop_duration={audio_dur - video_dur:.3f}[vout]",
+                    "-map", "[vout]",
+                    "-map", "1:a",
+                    "-c:v", "libx264",
+                    "-preset", "fast",
+                    "-crf", "18",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    str(music_concat_path),
+                ], label="audio replace + extend video")
+            else:
+                # Audio is shorter or same length — use it as-is, pad audio with silence.
+                ok = run_ffmpeg([
+                    "-i", str(concat_path),
+                    "-i", str(music_path),
+                    "-filter_complex",
+                    # apad adds silence at the end of audio to match video length
+                    "[1:a]apad[aout]",
+                    "-map", "0:v",
+                    "-map", "[aout]",
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-shortest",
+                    str(music_concat_path),
+                ], label="audio replace + pad audio")
+
             if ok and music_concat_path.exists():
                 concat_path.unlink(missing_ok=True)
                 concat_path = music_concat_path
-                print(f"  done {time.time()-t_music:.1f}s")
+                print(f"  done {time.time()-t_music:.1f}s  "
+                      f"[video {video_dur:.1f}s → audio {audio_dur:.1f}s]")
             else:
                 print("  failed — keeping original narration audio")
                 music_concat_path.unlink(missing_ok=True)

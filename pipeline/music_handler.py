@@ -171,37 +171,59 @@ class MusicHandler:
         music_volume: float = None,
         fade_in: float = None,
         fade_out: float = None,
+        intro_sec: float = None,
+        outro_sec: float = None,
     ) -> Path:
-        """Mix narration audio with background music."""
+        """
+        Mix narration audio with background music.
+
+        Layout of the final mix:
+            [intro_sec of music only]
+            [narration mixed under music]
+            [outro_sec of music only]
+            [fade out]
+
+        This gives the video a proper musical intro before the first word
+        and a tail after the last word so the video does not cut off abruptly.
+        """
         from pydub import AudioSegment
 
-        vol  = music_volume or config.MUSIC_VOLUME
-        fi   = int((fade_in  or config.MUSIC_FADE_IN_SEC)  * 1000)
-        fo   = int((fade_out or config.MUSIC_FADE_OUT_SEC) * 1000)
-        total_ms = int(total_duration * 1000)
+        vol       = music_volume if music_volume is not None else config.MUSIC_VOLUME
+        fi_ms     = int((fade_in  if fade_in  is not None else config.MUSIC_FADE_IN_SEC)  * 1000)
+        fo_ms     = int((fade_out if fade_out is not None else config.MUSIC_FADE_OUT_SEC) * 1000)
+        intro_ms  = int((intro_sec if intro_sec is not None else config.MUSIC_INTRO_SEC)  * 1000)
+        outro_ms  = int((outro_sec if outro_sec is not None else config.MUSIC_OUTRO_SEC)  * 1000)
 
-        print(f"  Mixing   : narration + music (vol={vol:.0%})...", end="", flush=True)
+        # Total mix length = intro + narration + outro
+        narration_actual_ms = int(total_duration * 1000)
+        total_mix_ms = intro_ms + narration_actual_ms + outro_ms
+
+        print(f"  Mixing   : {intro_ms//1000}s intro + narration + {outro_ms//1000}s outro "
+              f"= {total_mix_ms//1000}s  (vol={vol:.0%})...", end="", flush=True)
 
         narration = AudioSegment.from_file(str(narration_path))
         music     = AudioSegment.from_file(str(music_path))
 
-        # Loop music to match narration length
-        if len(music) < total_ms:
-            loops = (total_ms // len(music)) + 2
+        # Loop music to cover the full mix duration
+        if len(music) < total_mix_ms:
+            loops = (total_mix_ms // len(music)) + 2
             music = music * loops
-        music = music[:total_ms]
+        music = music[:total_mix_ms]
 
-        # Fade and reduce volume
-        music = music.fade_in(fi).fade_out(fo)
+        # Reduce music volume
         db_reduction = 20 * math.log10(vol) if vol > 0 else -60
         music = music + db_reduction
 
-        # Mix narration over music
-        mix = music.overlay(narration, position=0)
+        # Fade in at the very start, fade out at the very end
+        music = music.fade_in(fi_ms).fade_out(fo_ms)
+
+        # Overlay narration starting after the intro silence
+        # music track already runs the full length — narration sits on top of it
+        mix = music.overlay(narration, position=intro_ms)
         mix.export(str(output_path), format="mp3", bitrate="192k")
 
         size_kb = output_path.stat().st_size // 1024
-        print(f" done [{size_kb}KB]")
+        print(f" done [{size_kb}KB  {total_mix_ms//1000}s total]")
         return output_path
 
     def _get_duration(self, audio_path: Path) -> float:
@@ -242,9 +264,15 @@ class MusicHandler:
             music_path=music_path,
             output_path=output_path,
             total_duration=narration_duration,
+            # intro/outro come from config — gives music breathing room
         )
 
+        final_duration = self._get_duration(output_path)
         print(f"  Output   : {output_path}")
+        print(f"  Timeline : {config.MUSIC_INTRO_SEC}s music intro → "
+              f"{narration_duration:.1f}s narration → "
+              f"{config.MUSIC_OUTRO_SEC}s music outro = "
+              f"{final_duration:.1f}s total")
         print(f"  ℹ️  Add to YouTube description: {BENSOUND_ATTRIBUTION}")
         print(f"{'─'*60}")
         return output_path

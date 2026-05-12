@@ -350,8 +350,8 @@ class YouTubeUploader:
     """
     Stage 10: Upload the finished video to YouTube.
 
-    Handles authentication, video upload, thumbnail upload,
-    and saves the upload result JSON.
+    Reads the pre-built youtube_metadata.json from Stage 9 (YouTubeMetadataBuilder).
+    Handles authentication, video upload, thumbnail upload, and saves upload_result.json.
 
     Example:
         from pipeline.scene_refiner import SceneRefiner
@@ -359,7 +359,7 @@ class YouTubeUploader:
 
         refined = SceneRefiner.load_refined("timmys-big-ship-adventure")
         uploader = YouTubeUploader()
-        result = uploader.upload(refined, privacy="private")
+        result = uploader.upload(refined)
         print(result["video_url"])
     """
 
@@ -370,21 +370,46 @@ class YouTubeUploader:
         is_shorts: bool = True,
     ) -> dict:
         """
-        Upload the video to YouTube.
+        Upload the video to YouTube using metadata built by Stage 9.
 
         Args:
             refined:   The RefinedScript for this video.
-            privacy:   "private" | "unlisted" | "public"
-                       Default is "private" — always review before going public.
-            is_shorts: If True, adds #Shorts tag/suffix (default: True for 9:16 video).
+            privacy:   Fallback privacy if no youtube_metadata.json found.
+            is_shorts: Fallback Shorts flag if no youtube_metadata.json found.
 
         Returns dict with video_id, video_url, shorts_url.
         """
-        print(f"\n{'='*60}")
+        print(f"\n{'='*62}")
         print(f"  Stage 10: YouTube Upload — '{refined.title}'")
-        print(f"{'='*60}")
-        print(f"  Privacy  : {privacy}")
-        print(f"  Shorts   : {'yes' if is_shorts else 'no'}")
+        print(f"{'='*62}")
+
+        # ── Load metadata from Stage 9 (preferred) ────────────────────────────
+        try:
+            from pipeline.youtube_metadata import YouTubeMetadataBuilder
+            meta = YouTubeMetadataBuilder.load(refined.slug)
+            print("  Metadata : loaded from youtube_metadata.json ✓")
+            # Override privacy if caller specified something explicit
+            if privacy != "private":
+                meta["privacyStatus"] = privacy
+        except FileNotFoundError:
+            print("  ⚠️  youtube_metadata.json not found — building basic metadata.")
+            print("      Run Stage 9 (YouTubeMetadataBuilder) for full SEO metadata.")
+            meta = build_video_metadata(refined, privacy=privacy, is_shorts=is_shorts)
+            # Normalise to flat structure for consistency below
+            meta = {
+                "title":       meta["snippet"]["title"],
+                "description": meta["snippet"]["description"],
+                "tags":        meta["snippet"]["tags"],
+                "categoryId":  meta["snippet"]["categoryId"],
+                "defaultLanguage": meta["snippet"]["defaultLanguage"],
+                "privacyStatus":   meta["status"]["privacyStatus"],
+                "madeForKids":     meta["status"]["selfDeclaredMadeForKids"],
+                "pinned_comment":  None,
+                "is_shorts":       is_shorts,
+            }
+
+        print(f"  Privacy  : {meta['privacyStatus']}")
+        print(f"  Shorts   : {'yes' if meta.get('is_shorts', is_shorts) else 'no'}")
         print()
 
         # ── Locate final video ────────────────────────────────────────────────
@@ -399,11 +424,10 @@ class YouTubeUploader:
         thumb_dir  = Path(config.THUMBS_DIR) / refined.slug
         thumb_path = thumb_dir / "thumbnail_16x9_text.png"
         if not thumb_path.exists():
-            # Fall back to no-text version
             thumb_path = thumb_dir / "thumbnail_16x9.png"
         if not thumb_path.exists():
             print("  ⚠️  No thumbnail found — skipping thumbnail upload.")
-            print("      Run Stage 9 (thumbnail generation) to create one.")
+            print("      Run Stage 8 (thumbnail generation) to create one.")
             thumb_path = None
 
         # ── Authenticate ──────────────────────────────────────────────────────
@@ -412,16 +436,31 @@ class YouTubeUploader:
         print("  ✅  Authenticated")
         print()
 
-        # ── Build metadata ────────────────────────────────────────────────────
-        metadata = build_video_metadata(refined, privacy=privacy, is_shorts=is_shorts)
-        print(f"  Title    : {metadata['snippet']['title']}")
-        print(f"  Category : Film & Animation (ID {CATEGORY_FILM_ANIMATION})")
-        print(f"  Tags     : {len(metadata['snippet']['tags'])} tags")
+        # ── Build YouTube API body from flat meta dict ─────────────────────────
+        api_body = {
+            "snippet": {
+                "title":           meta["title"],
+                "description":     meta["description"],
+                "tags":            meta["tags"],
+                "categoryId":      meta.get("categoryId", CATEGORY_FILM_ANIMATION),
+                "defaultLanguage": meta.get("defaultLanguage", "en"),
+            },
+            "status": {
+                "privacyStatus":           meta["privacyStatus"],
+                "selfDeclaredMadeForKids": meta.get("madeForKids", True),
+            },
+        }
+
+        print(f"  Title    : {api_body['snippet']['title']}")
+        print(f"  Tags     : {len(api_body['snippet']['tags'])} tags")
+        print(f"  Desc.    : {len(api_body['snippet']['description'])} chars")
+        if meta.get("chapters"):
+            print(f"  Chapters : {len(meta['chapters'])} chapter timestamps")
         print("  Kids     : Yes (COPPA compliant)")
         print()
 
         # ── Upload video ──────────────────────────────────────────────────────
-        video_id = upload_video(youtube, video_path, metadata)
+        video_id   = upload_video(youtube, video_path, api_body)
         video_url  = f"https://www.youtube.com/watch?v={video_id}"
         shorts_url = f"https://www.youtube.com/shorts/{video_id}"
         print(f"\n  Video ID : {video_id}")
@@ -433,34 +472,66 @@ class YouTubeUploader:
         if thumb_path:
             thumbnail_ok = upload_thumbnail(youtube, video_id, thumb_path)
 
+        # ── Post pinned comment ───────────────────────────────────────────────
+        pinned_comment = meta.get("pinned_comment")
+        if pinned_comment:
+            self._post_pinned_comment(youtube, video_id, pinned_comment)
+
         # ── Save result ───────────────────────────────────────────────────────
         result_path = save_upload_result(
-            refined.slug, video_id, privacy, thumbnail_ok, metadata
+            refined.slug, video_id, meta["privacyStatus"], thumbnail_ok, api_body
         )
 
         result = {
-            "video_id":          video_id,
-            "video_url":         video_url,
-            "shorts_url":        shorts_url,
-            "privacy":           privacy,
+            "video_id":           video_id,
+            "video_url":          video_url,
+            "shorts_url":         shorts_url,
+            "privacy":            meta["privacyStatus"],
             "thumbnail_uploaded": thumbnail_ok,
         }
 
         print()
-        print(f"{'─'*60}")
+        print(f"{'─'*62}")
         print("  ✅  Upload complete!")
-        print(f"{'─'*60}")
+        print(f"{'─'*62}")
         print(f"  Video URL  : {video_url}")
         print(f"  Shorts URL : {shorts_url}")
-        print(f"  Privacy    : {privacy}")
-        if privacy == "private":
+        print(f"  Privacy    : {meta['privacyStatus']}")
+        if meta["privacyStatus"] == "private":
             print()
             print("  💡 Video is PRIVATE — review in YouTube Studio, then publish:")
             print(f"     https://studio.youtube.com/video/{video_id}/edit")
         print(f"  Result     : {result_path}")
-        print(f"{'─'*60}")
+        print(f"{'─'*62}")
 
         return result
+
+    def _post_pinned_comment(self, youtube, video_id: str, comment_text: str):
+        """Post the engagement comment and pin it to the top of the video."""
+        try:
+            resp = youtube.commentThreads().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": video_id,
+                        "topLevelComment": {
+                            "snippet": {"textOriginal": comment_text}
+                        },
+                    }
+                },
+            ).execute()
+            comment_id = resp["snippet"]["topLevelComment"]["id"]
+
+            # Pin the comment
+            youtube.comments().setModerationStatus(
+                id=comment_id,
+                moderationStatus="published",
+            ).execute()
+
+            print("  ✅  Pinned comment posted")
+        except Exception as e:
+            # Non-fatal — upload already succeeded
+            print(f"  ⚠️  Pinned comment failed (non-fatal): {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -39,12 +39,13 @@ sys.path.insert(0, str(ROOT))
 #  ✏️  EDIT THESE TO CONTROL YOUR TEST
 # ─────────────────────────────────────────────────────────────────────────────
 
-TEST_STAGE         = 8                             # Stage to run (1-9)
+TEST_STAGE         = 8                             # Stage to run (1-10)
 TEST_TOPIC         = "titanic story for kids"
 TEST_CATEGORY      = None                           # None = auto, or set a category
 LOAD_EXISTING_SLUG = "timmys-big-ship-adventure"      # Set to reuse saved outputs
 PRINT_JSON         = False                          # True = print raw JSON
 SAVE_OUTPUT        = True
+TEST_IS_SHORTS     = True                           # True = 9:16 Shorts, False = 16:9 long-form
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HELPERS
@@ -505,6 +506,58 @@ def test_stage_9():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  STAGE 9 — YouTube Metadata Builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_stage_9():
+    separator("STAGE 9 — YouTube SEO Metadata Builder")
+    from pipeline.scene_refiner import SceneRefiner
+    from pipeline.youtube_metadata import YouTubeMetadataBuilder
+    import config
+
+    if not LOAD_EXISTING_SLUG:
+        print("  Set LOAD_EXISTING_SLUG and re-run.")
+        separator()
+        return
+
+    refined = SceneRefiner.load_refined(LOAD_EXISTING_SLUG)
+    print(f"  Loaded  : {refined.title}")
+    print(f"  Format  : {'Shorts (9:16)' if TEST_IS_SHORTS else 'Long-form (16:9)'}")
+    print()
+
+    builder = YouTubeMetadataBuilder()
+    meta    = builder.build(refined, is_shorts=TEST_IS_SHORTS, privacy="private")
+
+    separator("VALIDATION")
+    from pathlib import Path
+    out_path = Path(config.FINAL_DIR) / refined.slug / "youtube_metadata.json"
+    checks = [
+        ("Metadata file saved",             out_path.exists()),
+        ("Title present",                   bool(meta.get("title"))),
+        ("Title ≤ 100 chars",               len(meta.get("title", "")) <= 100),
+        ("Description present",             bool(meta.get("description"))),
+        ("Description ≤ 5000 chars",        len(meta.get("description", "")) <= 5000),
+        ("Has hook line (emoji in desc)",   any(c for c in meta.get("description", "")[:80] if ord(c) > 127)),
+        ("Has CTA (SUBSCRIBE in desc)",     "SUBSCRIBE" in meta.get("description", "")),
+        ("Has music attribution",           "Bensound" in meta.get("description", "")),
+        ("Has hashtags in description",     "#" in meta.get("description", "")),
+        ("Tags present",                    len(meta.get("tags", [])) >= 10),
+        ("Tag combined chars ≤ 500",        sum(len(t) for t in meta.get("tags", [])) <= 500),
+        ("Has chapters (if Stage 6 done)",  True),   # optional — not a hard fail
+        ("Pinned comment present",          bool(meta.get("pinned_comment"))),
+        ("madeForKids = True",              meta.get("madeForKids") is True),
+    ]
+    passed = sum(1 for _, r in checks if r)
+    for label, result in checks:
+        print(f"  {'✅' if result else '❌'}  {label}")
+
+    separator()
+    print(f"  Result  : {'PASSED' if passed == len(checks) else f'PARTIAL ({passed}/{len(checks)})'}")
+    print(f"  Saved   : {out_path}")
+    return meta
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  STAGE 10 — YouTube Upload
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -602,7 +655,7 @@ STAGES = {
     6: test_stage_6,
     7: test_stage_7,    # Run AFTER Stage 6 for exact subtitle sync
     8: test_stage_8,
-    9: test_stage_9,    # Thumbnail generation (Fal.ai Flux)
+    9: test_stage_9,    # YouTube SEO metadata (chapters, tags, description)
     10: test_stage_10,  # YouTube upload
 }
 

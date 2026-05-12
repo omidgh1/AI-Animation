@@ -43,6 +43,7 @@ RUN_STAGE_5_MUSIC      = True    # Background music mix       (Bensound)
 RUN_STAGE_6_VIDEO      = True    # Video render               (FFmpeg)
 RUN_STAGE_7_SUBTITLES  = True    # SRT subtitle export
 RUN_STAGE_8_THUMBNAIL  = True    # Thumbnail generation       (Fal.ai Flux)
+RUN_STAGE_9_METADATA   = True    # YouTube SEO metadata build (chapters, tags, description)
 
 # ── Voice quality ─────────────────────────────────────────────────────────────
 USE_FAST_VOICE = False   # False = best quality (eleven_multilingual_v2)
@@ -139,6 +140,7 @@ from pipeline.music_handler       import MusicHandler
 from pipeline.video_renderer      import VideoRenderer
 from pipeline.subtitle_generator  import SubtitleGenerator
 from pipeline.thumbnail_generator import ThumbnailGenerator, build_short_title
+from pipeline.youtube_metadata    import YouTubeMetadataBuilder
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -384,15 +386,44 @@ def run_stage_8(refined) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  STAGE 9 — YouTube Upload  (only runs if UPLOAD_TO_YOUTUBE = True)
+#  STAGE 9 — YouTube Metadata Builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_stage_9(refined) -> dict | None:
+    """Build SEO-optimised YouTube metadata package. Returns metadata dict."""
+    label = "Stage 9 — YouTube Metadata"
+
+    out_path = Path(config.FINAL_DIR) / refined.slug / "youtube_metadata.json"
+    if not RUN_STAGE_9_METADATA and out_path.exists():
+        print(f"\n  ⏭   Stage 9 — metadata already exists, skipping")
+        _mark(label, "skip")
+        return YouTubeMetadataBuilder.load(refined.slug)
+
+    builder = YouTubeMetadataBuilder()
+    try:
+        meta = builder.build(
+            refined,
+            is_shorts=_fmt["is_shorts"],
+            privacy=YOUTUBE_PRIVACY,
+        )
+        _mark(label, "ok")
+        return meta
+    except Exception as e:
+        print(f"\n  ❌  Stage 9 failed: {e}")
+        _mark(label, "fail")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  STAGE 10 — YouTube Upload  (only runs if UPLOAD_TO_YOUTUBE = True)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_stage_10(refined) -> dict | None:
     """Upload video to YouTube. Returns upload result dict or None."""
-    label = "Stage 9 — YouTube Upload"
+    label = "Stage 10 — YouTube Upload"
 
     if not UPLOAD_TO_YOUTUBE:
-        print(f"\n  ⏭   Stage 9 — UPLOAD_TO_YOUTUBE=False, skipping")
+        print(f"\n  ⏭   Stage 10 — UPLOAD_TO_YOUTUBE=False, skipping")
         _mark(label, "skip")
         return None
 
@@ -408,11 +439,11 @@ def run_stage_9(refined) -> dict | None:
         _mark(label, "ok")
         return result
     except FileNotFoundError as e:
-        print(f"\n  ❌  Stage 9 — {e}")
+        print(f"\n  ❌  Stage 10 — {e}")
         _mark(label, "fail")
         return None
     except Exception as e:
-        print(f"\n  ❌  Stage 9 — upload failed: {e}")
+        print(f"\n  ❌  Stage 10 — upload failed: {e}")
         _mark(label, "fail")
         return None
 
@@ -451,8 +482,11 @@ def main():
     # ── Stage 8: Thumbnail ────────────────────────────────────────────────────
     thumb_results = run_stage_8(refined)
 
-    # ── Stage 9: YouTube Upload ───────────────────────────────────────────────
-    upload_result = run_stage_9(refined)
+    # ── Stage 9: YouTube Metadata ─────────────────────────────────────────────
+    run_stage_9(refined)
+
+    # ── Stage 10: YouTube Upload ──────────────────────────────────────────────
+    upload_result = run_stage_10(refined)
 
     # ── Final summary ─────────────────────────────────────────────────────────
     elapsed = round(time.time() - t_total, 1)

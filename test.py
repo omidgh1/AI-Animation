@@ -505,8 +505,93 @@ def test_stage_9():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DISPATCH
+#  STAGE 10 — YouTube Upload
 # ─────────────────────────────────────────────────────────────────────────────
+
+def test_stage_10():
+    separator("STAGE 10 — YouTube Upload")
+    from pipeline.scene_refiner import SceneRefiner
+    from pipeline.youtube_uploader import YouTubeUploader
+    import config
+
+    if not LOAD_EXISTING_SLUG:
+        print("  Set LOAD_EXISTING_SLUG and re-run.")
+        separator()
+        return
+
+    # ── Privacy setting ───────────────────────────────────────────────────────
+    # Change to "unlisted" or "public" when you're ready to publish.
+    PRIVACY  = config.YOUTUBE_DEFAULT_PRIVACY   # "private" by default
+    IS_SHORTS = config.YOUTUBE_IS_SHORTS         # True for 9:16 vertical videos
+
+    refined = SceneRefiner.load_refined(LOAD_EXISTING_SLUG)
+    print(f"  Loaded   : {refined.title}")
+    print(f"  Privacy  : {PRIVACY}  (edit config.YOUTUBE_DEFAULT_PRIVACY to change)")
+    print(f"  Shorts   : {IS_SHORTS}")
+    print()
+
+    # ── Pre-flight checks ─────────────────────────────────────────────────────
+    separator("PRE-FLIGHT CHECKS")
+    from pathlib import Path
+
+    video_path = Path(config.FINAL_DIR) / refined.slug / f"{refined.slug}_final.mp4"
+    thumb_path = Path(config.THUMBS_DIR) / refined.slug / "thumbnail_16x9_text.png"
+    thumb_path_fallback = Path(config.THUMBS_DIR) / refined.slug / "thumbnail_16x9.png"
+    secrets_path = Path("client_secrets.json")
+
+    pre_checks = [
+        ("Final MP4 exists (Stage 6)",         video_path.exists()),
+        ("Thumbnail exists (Stage 9)",          thumb_path.exists() or thumb_path_fallback.exists()),
+        ("client_secrets.json present",         secrets_path.exists()),
+    ]
+    pre_passed = sum(1 for _, r in pre_checks if r)
+    for label, result in pre_checks:
+        print(f"  {'✅' if result else '❌'}  {label}")
+
+    if pre_passed < len(pre_checks):
+        print()
+        if not secrets_path.exists():
+            print("  ⚠️  client_secrets.json missing! Setup steps:")
+            print("       1. https://console.cloud.google.com/ → create a project")
+            print("       2. APIs & Services → Enable 'YouTube Data API v3'")
+            print("       3. Credentials → Create OAuth 2.0 (Desktop App)")
+            print("       4. Download JSON → rename to client_secrets.json")
+            print("       5. Place in project root (next to config.py)")
+        if not video_path.exists():
+            print("  ⚠️  Run Stage 6 (video render) first.")
+        if not thumb_path.exists() and not thumb_path_fallback.exists():
+            print("  ⚠️  Run Stage 9 (thumbnail generation) first.")
+        separator()
+        print("  Result: BLOCKED — fix issues above and re-run")
+        return
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    separator("UPLOADING")
+    uploader = YouTubeUploader()
+    result   = uploader.upload(refined, privacy=PRIVACY, is_shorts=IS_SHORTS)
+
+    # ── Validation ────────────────────────────────────────────────────────────
+    separator("VALIDATION")
+    result_file = Path(config.FINAL_DIR) / refined.slug / "upload_result.json"
+    checks = [
+        ("Upload succeeded",               bool(result.get("video_id"))),
+        ("Video URL returned",             bool(result.get("video_url"))),
+        ("upload_result.json saved",       result_file.exists()),
+        ("Thumbnail uploaded",             result.get("thumbnail_uploaded", False)),
+        ("Privacy set correctly",          result.get("privacy") == PRIVACY),
+    ]
+    passed = sum(1 for _, r in checks if r)
+    for label, res in checks:
+        print(f"  {'✅' if res else '⚠️ '}  {label}")
+
+    separator()
+    print(f"  Result   : {'PASSED' if passed == len(checks) else f'PARTIAL ({passed}/{len(checks)})'}")
+    if result.get("video_url"):
+        print(f"  Watch    : {result['video_url']}")
+        print(f"  Shorts   : {result['shorts_url']}")
+        if PRIVACY == "private":
+            print(f"  Studio   : https://studio.youtube.com/video/{result['video_id']}/edit")
+    return result
 
 STAGES = {
     1: test_stage_1,
@@ -515,8 +600,10 @@ STAGES = {
     4: test_stage_4,
     5: test_stage_5,
     6: test_stage_6,
-    7: test_stage_7,    # Run AFTER Stage 8 for exact subtitle sync
+    7: test_stage_7,    # Run AFTER Stage 6 for exact subtitle sync
     8: test_stage_8,
+    9: test_stage_9,    # Thumbnail generation (Fal.ai Flux)
+    10: test_stage_10,  # YouTube upload
 }
 
 import config  # noqa — needed for audio dir path in stage 4

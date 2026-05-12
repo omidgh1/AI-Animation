@@ -114,7 +114,9 @@ VOICE_SETTINGS = {
 #  IMAGE GENERATION (Fal.ai Flux)
 # ─────────────────────────────────────────────
 FAL_IMAGE_MODEL   = "fal-ai/flux-pro/v1.1"
-FAL_IMAGE_SIZE    = "portrait_16_9"      # 9:16 vertical for Shorts
+FAL_IMAGE_SIZE    = "portrait_16_9"      # overridden by run_pipeline.py
+                                          # "portrait_16_9"  → 1080×1920 (9:16 Shorts)
+                                          # "landscape_16_9" → 1920×1080 (16:9 YouTube)
 FAL_IMAGE_FORMAT  = "png"
 FAL_MAX_CONCURRENT = 4                   # parallel image generations
 
@@ -142,6 +144,18 @@ MUSIC_MOOD_KEYWORDS = {
 THUMB_WIDTH  = 1280
 THUMB_HEIGHT = 720
 THUMB_MODEL  = "fal-ai/flux-pro/v1.1"
+
+# ─────────────────────────────────────────────
+#  YOUTUBE UPLOAD SETTINGS (Stage 10)
+# ─────────────────────────────────────────────
+# Place client_secrets.json in the project root (downloaded from Google Cloud Console)
+# OAuth token is saved automatically to output/youtube_token.json after first login
+
+YOUTUBE_DEFAULT_PRIVACY   = "private"    # "private" | "unlisted" | "public"
+YOUTUBE_IS_SHORTS         = True         # Add #Shorts tag/suffix for 9:16 videos
+YOUTUBE_MADE_FOR_KIDS     = True         # COPPA compliance — always True for this pipeline
+YOUTUBE_CATEGORY_ID       = "1"          # 1 = Film & Animation
+YOUTUBE_CLIENT_SECRETS    = "client_secrets.json"   # OAuth credentials file (project root)
 
 # ─────────────────────────────────────────────
 #  FFMPEG PATH (Windows fix)

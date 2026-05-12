@@ -20,3 +20,8 @@ aiohttp>=3.9.0             # Async HTTP calls
 requests>=2.31.0           # HTTP utility
 tqdm>=4.66.0               # Progress bars
 websocket-client>=1.6.0    # ComfyUI WebSocket (optional)
+
+# ── YouTube Upload (Stage 10) ─────────────────
+google-api-python-client>=2.100.0  # YouTube Data API v3
+google-auth-oauthlib>=1.1.0        # OAuth 2.0 flow (browser login)
+google-auth-httplib2>=0.2.0        # HTTP transport for google-auth

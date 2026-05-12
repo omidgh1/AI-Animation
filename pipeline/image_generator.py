@@ -72,7 +72,7 @@ def build_payload(scene: RefinedScene, refined: RefinedScript) -> dict:
     return {
         "prompt": prompt,
         "negative_prompt": neg,
-        "image_size": "portrait_16_9",   # Fal.ai enum for vertical 9:16 format
+        "image_size": config.FAL_IMAGE_SIZE,   # set by run_pipeline.py based on VIDEO_FORMAT
         "num_images": 1,
         "output_format": "png",
         "safety_tolerance": "5",

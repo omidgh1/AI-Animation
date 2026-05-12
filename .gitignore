@@ -1,0 +1,14 @@
+# Secrets
+.env
+client_secrets.json
+output/youtube_token.json
+
+# Output (generated files — large, no need to commit)
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/

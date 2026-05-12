@@ -23,7 +23,18 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
 #  CLAUDE MODEL SETTINGS
 # ─────────────────────────────────────────────
 STORY_MODEL        = "claude-sonnet-4-5"
-STORY_MAX_TOKENS   = 4096
+STORY_MAX_TOKENS   = 4096    # overridden dynamically — see story_max_tokens_for()
+
+def story_max_tokens_for(num_scenes: int) -> int:
+    """
+    Return the right max_tokens for Claude Stage 1 based on scene count.
+    Each scene needs ~200 tokens of output (narration + image prompt + fields).
+    Add 2048 headroom for top-level fields.
+    Capped at 16384 (Claude's safe output limit for complex JSON).
+    """
+    per_scene = 250
+    headroom  = 2048
+    return min(16384, max(4096, num_scenes * per_scene + headroom))
 REFINE_MAX_TOKENS  = 8192
 STORY_TEMPERATURE  = 1.0
 
@@ -121,9 +132,11 @@ FAL_MAX_CONCURRENT = 4                   # parallel image generations
 # ─────────────────────────────────────────────
 #  MUSIC SETTINGS (Stage 5)
 # ─────────────────────────────────────────────
-MUSIC_VOLUME      = 0.20    # background music volume (0.0-1.0), under narration
-MUSIC_FADE_IN_SEC = 2.0     # fade in duration
-MUSIC_FADE_OUT_SEC= 3.0     # fade out duration
+MUSIC_VOLUME       = 0.20   # background music volume (0.0-1.0), under narration
+MUSIC_FADE_IN_SEC  = 1.5   # fade in at the very start of the music track
+MUSIC_FADE_OUT_SEC = 3.0   # fade out at the very end of the music track
+MUSIC_INTRO_SEC    = 1.5   # seconds of music-only BEFORE narration starts
+MUSIC_OUTRO_SEC    = 2.0   # seconds of music-only AFTER narration ends
 
 # Pixabay free music search terms per mood
 MUSIC_MOOD_KEYWORDS = {

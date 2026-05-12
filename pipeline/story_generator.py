@@ -38,86 +38,156 @@ from pipeline.models import VideoScript
 #  This is the core of Stage 1. It tells Claude exactly what to produce.
 # ─────────────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = dedent("""
-    You are a professional children's story writer and video script creator.
-    You specialise in writing animated short-form video scripts for children aged 3–9,
-    optimised for YouTube Shorts, TikTok, and Instagram Reels (vertical 9:16 format, ~60 seconds).
+def _build_system_prompt(num_scenes: int) -> str:
+    """
+    Build the story generation system prompt dynamically based on scene count.
+    Supports short videos (12 scenes) and long videos (30, 60, 90 scenes).
+    """
+    NL = "\n"
 
-    YOUR JOB:
-    Given a story topic, produce a complete, structured video script as valid JSON.
+    # ── Emotion arc ────────────────────────────────────────────────────────────
+    if num_scenes <= 12:
+        emotion_map = {
+            1: "surprised", 2: "happy", 3: "scared", 4: "sad",
+            5: "sad", 6: "surprised", 7: "curious", 8: "excited",
+            9: "excited", 10: "excited", 11: "proud", 12: "calm",
+        }
+        emotions = [emotion_map.get(i, "happy") for i in range(1, num_scenes + 1)]
+    else:
+        act1_end = num_scenes // 5
+        act2_end = num_scenes * 4 // 5
+        emotions = []
+        for i in range(1, num_scenes + 1):
+            if i == 1:
+                emotions.append("surprised")
+            elif i <= act1_end:
+                emotions.append("happy")
+            elif i == act1_end + 1:
+                emotions.append("scared")
+            elif i <= act1_end + 3:
+                emotions.append("sad")
+            elif i == act1_end + 4:
+                emotions.append("surprised")
+            elif i <= act2_end - (num_scenes // 10):
+                emotions.append("curious")
+            elif i <= act2_end:
+                emotions.append("excited")
+            elif i == num_scenes - 1:
+                emotions.append("proud")
+            elif i == num_scenes:
+                emotions.append("calm")
+            else:
+                emotions.append("excited")
 
-    STRICT RULES FOR ALL CONTENT:
-    - Language must be simple enough for a 3-year-old to understand
-    - Maximum 20 words per narration line
-    - No scary, violent, or adult themes — ever
-    - Every story MUST have a clear emotional arc: problem → struggle → helper → solution → celebration
-    - Stories always end happily and positively
-    - The main character must be loveable, round-faced, and cute (think Pixar style)
-    - Use bright, warm, saturated colours in all image prompts
-    - Never mention brands, real people, or copyrighted characters
+    # ── Scene structure block ───────────────────────────────────────────────────
+    if num_scenes <= 12:
+        labels = {
+            1: "HOOK",  2: "WORLD",        3: "PROBLEM",       4: "ATTEMPT 1",
+            5: "REACTION", 6: "HELPER",    7: "TEAMWORK",      8: "ALMOST",
+            9: "BREAKTHROUGH", 10: "CELEBRATION", 11: "LESSON", 12: "ENDING",
+        }
+        scene_lines = []
+        for i in range(1, num_scenes + 1):
+            label = labels.get(i, "SCENE " + str(i))
+            scene_lines.append(
+                '    Scene {:02d} - {}: emotion: "{}"'.format(i, label, emotions[i - 1])
+            )
+        scene_structure = NL.join(scene_lines)
+        duration_note   = "~{} seconds ({} scenes x ~5s each)".format(num_scenes * 5, num_scenes)
+        structure_note  = "Scene 01 = HOOK (start mid-action), Scene {} = ENDING (warm goodbye)".format(num_scenes)
+    else:
+        act1_end = num_scenes // 5
+        act2_end = num_scenes * 4 // 5
+        duration_note = "~{} minutes ({} scenes x ~10s each)".format(
+            (num_scenes * 10) // 60, num_scenes
+        )
+        structure_note = (
+            "ACT 1 SETUP (scenes 1-{}): world, character, normal life. "
+            "ACT 2 ADVENTURE (scenes {}-{}): problem, attempts, helpers, teamwork, escalation. "
+            "ACT 3 RESOLUTION (scenes {}-{}): breakthrough, celebration, lesson, warm ending."
+        ).format(act1_end, act1_end + 1, act2_end, act2_end + 1, num_scenes)
+        scene_structure = (
+            "    (Generate ALL {} scenes following the 3-act arc above)\n"
+            "    Sample emotions: scene 1={}, scene {}={}, scene {}={}"
+        ).format(
+            num_scenes,
+            emotions[0],
+            num_scenes // 2, emotions[num_scenes // 2 - 1],
+            num_scenes, emotions[-1],
+        )
 
-    SCENE STRUCTURE (12 scenes total):
-    Scene 01 — HOOK: Start mid-action. Something surprising or exciting. No slow intros.
-               emotion: "surprised"
-    Scene 02 — WORLD: Show the character's happy normal world.
-               emotion: "happy"
-    Scene 03 — PROBLEM: The problem appears. Character looks worried or sad.
-               emotion: "scared"
-    Scene 04 — ATTEMPT 1: Character tries to solve it — fails.
-               emotion: "sad"
-    Scene 05 — REACTION: Character feels sad/scared — relatable emotion.
-               emotion: "sad"
-    Scene 06 — HELPER: A friend or helper arrives — hopeful moment.
-               emotion: "surprised"
-    Scene 07 — TEAMWORK: They work on the problem together.
-               emotion: "curious"
-    Scene 08 — ALMOST: Getting closer — almost solved!
-               emotion: "excited"
-    Scene 09 — BREAKTHROUGH: The key moment — problem is solved!
-               emotion: "excited"
-    Scene 10 — CELEBRATION: Everyone is happy — big celebration moment.
-               emotion: "excited"
-    Scene 11 — LESSON: Character shares the lesson they learned.
-               emotion: "proud"
-    Scene 12 — ENDING: Warm, cosy ending. Character waves goodbye.
-               emotion: "calm"
+    # ── Assemble final prompt string (no f-string, no triple-quote issues) ──────
+    lines = [
+        "You are a professional children's story writer and video script creator.",
+        "You specialise in writing animated video scripts for children aged 3-9,",
+        "optimised for YouTube Shorts, TikTok, Instagram Reels, and long-form YouTube.",
+        "",
+        "YOUR JOB:",
+        "Given a story topic, produce a complete, structured video script as valid JSON.",
+        "",
+        "VIDEO SPECIFICATIONS:",
+        "- Total scenes: EXACTLY {} scenes".format(num_scenes),
+        "- Duration: {}".format(duration_note),
+        "- Structure: {}".format(structure_note),
+        "",
+        "STRICT RULES FOR ALL CONTENT:",
+        "- Language must be simple enough for a 3-year-old to understand",
+        "- Maximum 20 words per narration line",
+        "- No scary, violent, or adult themes -- ever",
+        "- Every story MUST have a clear emotional arc: hook -> problem -> helper -> solution -> celebration",
+        "- Stories always end happily and positively",
+        "- The main character must be loveable, round-faced, and cute (think Pixar style)",
+        "- Use bright, warm, saturated colours in all image prompts",
+        "- Never mention brands, real people, or copyrighted characters",
+        "",
+        "SCENE STRUCTURE ({} scenes -- generate ALL of them):".format(num_scenes),
+        scene_structure,
+        "",
+        "CRITICAL EMOTION RULES:",
+        "- Every scene MUST have the correct emotion field as shown above",
+        "- Do NOT use 'happy' for all scenes -- this breaks voice selection",
+        "- The emotion field drives which voice tone ElevenLabs uses for narration",
+        "",
+        "IMAGE PROMPT RULES:",
+        "- Every image prompt must be 60-120 words",
+        "- Always include the main_character description verbatim",
+        "- Include: character action, facial expression, background setting, lighting mood",
+        "- Always end with: children's book illustration style, bright cheerful colours, "
+        "cute friendly design, 9:16 vertical composition",
+        "- No text or words in images",
+        "- No dark or scary imagery",
+        "",
+        "CAMERA MOVEMENT GUIDE:",
+        "- slow_zoom_in: for emotional close-up moments",
+        "- slow_zoom_out: for revealing a wider world",
+        "- pan_left / pan_right: for action/movement",
+        "- pan_up: for something rising (balloon, bird flying)",
+        "- pan_down: for something falling or looking down",
+        "- static: for calm, peaceful moments",
+        "",
+        "SOUND EFFECTS (use sparingly -- 0 to 2 per scene):",
+        'Good examples: "magic sparkle", "bird chirp", "happy bounce", "gentle wind",',
+        '"water splash", "leaf rustle", "celebratory pop", "soft footsteps",',
+        '"heart beat", "surprised gasp", "giggle", "applause"',
+        "",
+        "OUTPUT FORMAT:",
+        "Return ONLY valid JSON matching the schema provided. No markdown, no explanation,",
+        "no code fences. Start your response with { and end with }.",
+        "YOU MUST GENERATE EXACTLY {} SCENES -- not fewer, not more.".format(num_scenes),
+    ]
+    return NL.join(lines)
 
-    CRITICAL: Every scene MUST have the correct emotion field as shown above.
-    Do NOT use "happy" for all scenes — this breaks voice selection and music mood.
-    The emotion field drives which voice tone ElevenLabs uses for narration.
-
-    IMAGE PROMPT RULES:
-    - Every image prompt must be 60–120 words
-    - Always include the main_character description verbatim
-    - Include: character action, facial expression, background setting, lighting mood
-    - Always end with: "children's book illustration style, bright cheerful colours, cute friendly design, 9:16 vertical composition"
-    - No text or words in images
-    - No dark or scary imagery
-
-    CAMERA MOVEMENT GUIDE:
-    - slow_zoom_in: for emotional close-up moments
-    - slow_zoom_out: for revealing a wider world
-    - pan_left / pan_right: for action/movement
-    - pan_up: for something rising (balloon, bird flying)
-    - pan_down: for something falling or looking down
-    - static: for calm, peaceful moments
-
-    SOUND EFFECTS (use sparingly — 0 to 2 per scene):
-    Good examples: "magic sparkle", "bird chirp", "happy bounce", "gentle wind",
-    "water splash", "leaf rustle", "celebratory pop", "soft footsteps",
-    "heart beat", "surprised gasp", "giggle", "applause"
-
-    OUTPUT FORMAT:
-    Return ONLY valid JSON matching the schema provided. No markdown, no explanation,
-    no code fences. Start your response with { and end with }.
-""").strip()
+# Build system prompt using current config
+SYSTEM_PROMPT = _build_system_prompt(config.NUM_SCENES)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  JSON SCHEMA  (passed to Claude to enforce exact output structure)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VIDEO_SCRIPT_SCHEMA = {
+def _build_schema(num_scenes: int) -> dict:
+    """Build the JSON schema dynamically based on scene count."""
+    return {
     "type": "object",
     "required": [
         "title", "slug", "category", "moral", "main_character",
@@ -147,8 +217,8 @@ VIDEO_SCRIPT_SCHEMA = {
         "thumbnail_concept": {"type": "string"},
         "scenes": {
             "type": "array",
-            "minItems": 12,
-            "maxItems": 12,
+            "minItems": num_scenes,
+            "maxItems": num_scenes,
             "items": {
                 "type": "object",
                 "required": [
@@ -189,7 +259,10 @@ VIDEO_SCRIPT_SCHEMA = {
             }
         }
     }
-}
+    }  # end of schema dict returned by _build_schema()
+
+
+VIDEO_SCRIPT_SCHEMA = _build_schema(config.NUM_SCENES)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +299,10 @@ class StoryGenerator:
 
     def _build_user_prompt(self, topic: str, category: str | None = None) -> str:
         """Build the user-facing prompt that includes the topic and optional category hint."""
+        # Rebuild system prompt in case config.NUM_SCENES changed at runtime
+        global SYSTEM_PROMPT, VIDEO_SCRIPT_SCHEMA
+        SYSTEM_PROMPT = _build_system_prompt(config.NUM_SCENES)
+        VIDEO_SCRIPT_SCHEMA = _build_schema(config.NUM_SCENES)
         category_hint = ""
         if category and category in config.STORY_CATEGORIES:
             category_hint = f"\nStory category: {category.replace('_', ' ')}"
@@ -236,7 +313,7 @@ class StoryGenerator:
             TOPIC: {topic}
             {category_hint}
             TARGET AUDIENCE: Children aged 3–9
-            VIDEO LENGTH: ~60 seconds (exactly 12 scenes)
+            VIDEO LENGTH: ~{config.TARGET_VIDEO_SEC} seconds (exactly {config.NUM_SCENES} scenes)
             FORMAT: YouTube Shorts / TikTok / Instagram Reels (vertical 9:16)
 
             Remember:
@@ -261,15 +338,22 @@ class StoryGenerator:
         Make the API call to Claude. Decorated with tenacity retry logic
         so it automatically retries on connection errors or rate limits.
         """
+        max_tokens = config.story_max_tokens_for(config.NUM_SCENES)
         response = self.client.messages.create(
             model=config.STORY_MODEL,
-            max_tokens=config.STORY_MAX_TOKENS,
+            max_tokens=max_tokens,
             temperature=config.STORY_TEMPERATURE,
             system=SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": user_prompt}
             ],
         )
+        if response.stop_reason == "max_tokens":
+            raise ValueError(
+                f"Stage 1 response was truncated at {max_tokens} tokens "
+                f"for {config.NUM_SCENES} scenes. "
+                "This should not happen — report this as a bug."
+            )
         return response.content[0].text
 
     def _normalize(self, data: dict) -> dict:

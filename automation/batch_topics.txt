@@ -1,0 +1,44 @@
+# AI Kids Video Generator — Batch Topic Queue
+# Format: topic | category   (category is optional)
+# Lines starting with # are ignored
+# ─────────────────────────────────────────────
+
+# Animal Adventures
+a tiny dragon who is afraid of fire | animal_adventure
+a brave little turtle who wants to swim fast | animal_adventure
+a baby elephant who lost her favourite toy | animal_adventure
+a shy giraffe who is scared of heights | animal_adventure
+a penguin who wants to learn how to fly | animal_adventure
+a little owl who is afraid of the dark | animal_adventure
+a bunny who wants to reach the tallest carrot | animal_adventure
+a baby bear who can't find honey | animal_adventure
+
+# Friendship & Emotions
+two frogs learning to share a lily pad | friendship_and_emotions
+a lion cub who learns it is okay to cry | friendship_and_emotions
+a puppy who feels left out at the park | friendship_and_emotions
+best friends who have their first argument | friendship_and_emotions
+a little girl robot who wants a hug | friendship_and_emotions
+a cloud who is sad because it rains too much | friendship_and_emotions
+
+# Magic & Fantasy
+a tiny fairy who loses her magic wand | magic_and_fantasy
+a young wizard whose spells keep going wrong | magic_and_fantasy
+a unicorn who lost her rainbow | magic_and_fantasy
+a magic carpet that is afraid to fly | magic_and_fantasy
+a little mermaid who wants to visit the stars | magic_and_fantasy
+a dragon egg that finally hatches | magic_and_fantasy
+
+# Learning & Educational
+a caterpillar turning into a butterfly | learning_and_educational
+a little seed growing into a big sunflower | learning_and_educational
+a baby chick hatching for the first time | learning_and_educational
+stars learning why they twinkle at night | learning_and_educational
+a raindrop's journey from cloud to river | learning_and_educational
+
+# Bedtime & Calming
+the moon helping sleepy animals find their beds | bedtime_and_calming
+a little star who guides animals home at night | bedtime_and_calming
+a sleepy bunny who cannot fall asleep | bedtime_and_calming
+clouds making soft pillows for tired birds | bedtime_and_calming
+a lullaby sung by a gentle whale to the ocean | bedtime_and_calming

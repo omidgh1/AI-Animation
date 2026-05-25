@@ -308,8 +308,6 @@ class StoryGenerator:
         If character_block is provided (from character_manager), it is injected
         before the story instructions so Claude cannot invent a new character look.
         """
-    def _build_user_prompt(self, topic: str, category: str | None = None) -> str:
-        """Build the user-facing prompt that includes the topic and optional category hint."""
         # Rebuild system prompt in case config.NUM_SCENES changed at runtime
         global SYSTEM_PROMPT, VIDEO_SCRIPT_SCHEMA
         SYSTEM_PROMPT = _build_system_prompt(config.NUM_SCENES)
@@ -386,6 +384,14 @@ Do NOT change hair colour, eye colour, clothing, or any other feature.
         import re
 
         # ── Top-level missing fields ──────────────────────────────────────────
+
+        # Claude sometimes uses "topic" or "story_title" instead of "title"
+        if "title" not in data:
+            data["title"] = (
+                data.pop("story_title", None)
+                or data.pop("topic", None)
+                or "A Kids Adventure"
+            )
 
         if "slug" not in data and "title" in data:
             raw = data["title"].lower()

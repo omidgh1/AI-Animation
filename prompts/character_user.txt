@@ -1,0 +1,22 @@
+Create a complete character definition for this kids YouTube series character:
+
+USER DESCRIPTION:
+$description
+
+SERIES NAME: $series_name
+
+Generate the following JSON exactly:
+{
+  "name": "<character display name>",
+  "species": "<animal/creature type>",
+  "visual_description": "<full 60-80 word paragraph describing the character for a story writer. Include: species, size, fur/skin colour, eye colour and size, distinctive features, clothing/accessories, personality shown through appearance. Written as: 'NAME is a [description]...'>",
+  "flux_anchor": "<20-35 word Flux image anchor. CRITICAL: this is appended to EVERY scene prompt to lock in the character's look. Format: 'NAME: [distinctive visual features], [clothing], [colour], cute chibi Pixar style, consistent character design'>",
+  "personality": "<2-3 sentences describing personality, fears, goals, and how they react to problems. Used by Claude to write the story narration>",
+  "voice_style": "<one of: warm_and_gentle | energetic_and_bubbly | soft_and_shy | brave_and_bold | silly_and_funny>",
+  "color_palette": ["<dominant hex>", "<secondary hex>", "<accent hex>"],
+  "series_name": "$series_name",
+  "tagline": "<one fun sentence that could be a series tagline>",
+  "catchphrase": "<short catchphrase the character says, in quotes, e.g. 'Adventure awaits!'>",
+  "typical_settings": ["<3 typical settings for stories with this character>"],
+  "story_themes": ["<5 good story themes that fit this character>"]
+}

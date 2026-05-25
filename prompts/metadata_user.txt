@@ -1,0 +1,68 @@
+Generate viral YouTube metadata for this kids animated story:
+
+STORY DETAILS:
+Title         : $title
+Moral         : $moral
+Character     : $character
+Category      : $category
+Music mood    : $music_mood
+Duration      : $duration_str
+Is long video : $is_long (long = 8+ minutes, unlocks mid-roll ads)
+
+NARRATION PREVIEW (first 4 scenes):
+$narration_preview
+
+ALL SCENES:
+$scene_list
+
+EXISTING DESCRIPTION (from story generation):
+$existing_description
+
+EXISTING TAGS:
+$existing_tags
+
+REQUIRED JSON OUTPUT:
+{
+  "title_primary": "<main title — max 60 chars, character name + emotional hook>",
+  "title_variants": [
+    "<alt title 1 — different emotional angle>",
+    "<alt title 2 — question format>",
+    "<alt title 3 — number/list format>"
+  ],
+  "description_full": "<full YouTube description, 800-1000 chars. First 3 lines are the hook. Include story summary, moral, parent note, Music by Bensound.com credit, and 10 hashtags at end>",
+  "description_short": "<150 char version for Shorts — punchy, ends with hashtags>",
+  "tags": [
+    "<50 tags total: 5 ultra-broad, 20 mid-tier, 25 specific. No duplicates. Mix singular/plural. Max 500 chars total>",
+    "..."
+  ],
+  "chapters": {"include": $include_val, "list": [
+    {"time": "0:00", "title": "<chapter title>"},
+    {"time": "1:00", "title": "<chapter title>"},
+    "..."
+  ]},
+  "thumbnail_text_options": [
+    "<option 1 — 3-5 words, CAPS for key word>",
+    "<option 2 — different emotional angle>",
+    "<option 3 — character name focus>"
+  ],
+  "best_upload_time": {
+    "day": "<best day of week>",
+    "time_utc": "<HH:MM UTC>",
+    "reason": "<one sentence why>"
+  },
+  "end_screen_suggestions": [
+    "<suggestion 1 — what video type to show next>",
+    "<suggestion 2>",
+    "<suggestion 3>"
+  ],
+  "cards_suggestions": [
+    "<card 1 — timestamp and what to link>",
+    "<card 2>"
+  ],
+  "category_id": "<YouTube category ID as string: 20=Gaming, 22=People&Blogs, 24=Entertainment, 27=Education, 28=Science&Tech>",
+  "made_for_kids": true,
+  "language": "en",
+  "viral_score_estimate": "<1-10 score with one sentence explanation>",
+  "seo_keywords_primary": ["<top 5 keywords parents would search>"],
+  "playlist_suggestion": "<name of playlist this video should be added to>"
+}

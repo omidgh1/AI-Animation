@@ -297,6 +297,17 @@ class StoryGenerator:
         ]:
             Path(d).mkdir(parents=True, exist_ok=True)
 
+    def _build_user_prompt(
+        self,
+        topic: str,
+        category: str | None = None,
+        character_block: str | None = None,
+    ) -> str:
+        """
+        Build the user-facing prompt.
+        If character_block is provided (from character_manager), it is injected
+        before the story instructions so Claude cannot invent a new character look.
+        """
     def _build_user_prompt(self, topic: str, category: str | None = None) -> str:
         """Build the user-facing prompt that includes the topic and optional category hint."""
         # Rebuild system prompt in case config.NUM_SCENES changed at runtime
@@ -307,6 +318,17 @@ class StoryGenerator:
         if category and category in config.STORY_CATEGORIES:
             category_hint = f"\nStory category: {category.replace('_', ' ')}"
 
+        char_section = ""
+        if character_block:
+            char_section = f"""
+{character_block}
+
+IMPORTANT: The character definitions above are LOCKED.
+Copy the flux_anchor verbatim into every scene's image_prompt field.
+Use the visual_description verbatim as the main_character field.
+Do NOT change hair colour, eye colour, clothing, or any other feature.
+"""
+
         return dedent(f"""
             Create a complete kids' video script for this topic:
 
@@ -315,11 +337,10 @@ class StoryGenerator:
             TARGET AUDIENCE: Children aged 3–9
             VIDEO LENGTH: ~{config.TARGET_VIDEO_SEC} seconds (exactly {config.NUM_SCENES} scenes)
             FORMAT: YouTube Shorts / TikTok / Instagram Reels (vertical 9:16)
-
+            {char_section}
             Remember:
             - Start with a HOOK in scene 1 — jump straight into the action
             - Keep all narration under 20 words per scene
-            - Make the main character adorable and loveable
             - Use the full emotional arc: problem → struggle → helper → solution → celebration
             - Return ONLY valid JSON, nothing else
         """).strip()
@@ -523,14 +544,20 @@ class StoryGenerator:
         topic: str,
         category: str | None = None,
         save: bool = True,
+        main_character: dict | None = None,
+        supporting_characters: list[dict] | None = None,
     ) -> VideoScript:
         """
         Generate a complete video script from a topic string.
 
         Args:
-            topic:    One-line story topic, e.g. "a bunny afraid of thunder"
-            category: Optional story category override. If None, Claude chooses.
-            save:     If True, saves the JSON to output/stories/.
+            topic:                 One-line story topic, e.g. "a bunny afraid of thunder"
+            category:              Optional story category override. If None, Claude chooses.
+            save:                  If True, saves the JSON to output/stories/.
+            main_character:        Character dict from character_manager.load_character().
+                                   If set, locks the character design so Claude cannot
+                                   invent a new look.
+            supporting_characters: List of supporting character dicts (optional).
 
         Returns:
             A validated VideoScript Pydantic model.
@@ -542,10 +569,23 @@ class StoryGenerator:
         print(f"  Scenes   : {config.NUM_SCENES}")
         if category:
             print(f"  Category : {category}")
+        if main_character:
+            ep = main_character.get("episode_count", 0) + 1
+            print(f"  Character: {main_character['name']} (Episode {ep} of '{main_character.get('series_name', '')}')")
+        if supporting_characters:
+            print(f"  Supporting: {', '.join(c['name'] for c in supporting_characters)}")
         print()
 
+        # Build character instruction block if a character is provided
+        character_block = None
+        if main_character:
+            from character_manager import build_character_block, build_topic_with_character
+            ep_num = main_character.get("episode_count", 0) + 1
+            character_block = build_character_block(main_character, supporting_characters)
+            topic = build_topic_with_character(topic, main_character, supporting_characters, ep_num)
+
         t_start = time.time()
-        user_prompt = self._build_user_prompt(topic, category)
+        user_prompt = self._build_user_prompt(topic, category, character_block=character_block)
 
         print("  Calling Claude API...", end="", flush=True)
         raw_response = self._call_claude(user_prompt)
@@ -555,6 +595,13 @@ class StoryGenerator:
         print("  Parsing and validating JSON...", end="", flush=True)
         script = self._parse_and_validate(raw_response)
         print(" done")
+
+        # If a locked character was provided, override whatever Claude wrote
+        # for main_character to guarantee it matches the character file exactly.
+        if main_character:
+            from character_manager import build_main_character_string
+            locked = build_main_character_string(main_character)
+            script = script.model_copy(update={"main_character": locked})
 
         if save:
             saved_path = self._save_script(script)

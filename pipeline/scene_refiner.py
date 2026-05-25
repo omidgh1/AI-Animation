@@ -447,52 +447,115 @@ class SceneRefiner:
             f.write(refined.model_dump_json(indent=2))
         return path
 
-    def refine(self, script: VideoScript, save: bool = True) -> RefinedScript:
+    def refine(
+        self,
+        script: VideoScript,
+        save: bool = True,
+        main_character: dict | None = None,
+        supporting_characters: list[dict] | None = None,
+    ) -> RefinedScript:
         """
         Refine a Stage 1 VideoScript into a Stage 2 RefinedScript.
 
-        Uses a two-pass split strategy to avoid max_token truncation:
-          Pass A: global fields + scenes 1-6
-          Pass B: scenes 7-12 only
-        Then merges both into a single RefinedScript.
+        Automatically splits scenes into batches of SCENES_PER_PASS (6) so each
+        Claude call stays well within REFINE_MAX_TOKENS.  Works for any scene count:
+          12 scenes  -> 2 passes  (6 + 6)
+          30 scenes  -> 5 passes  (6 x 4 + 6)
+          60 scenes  -> 10 passes (6 x 10)
+          90 scenes  -> 15 passes
+        Pass 1 also generates all global fields (style suffix, colour story, etc.).
+        All passes are merged into one complete RefinedScript.
 
-        Args:
-            script: VideoScript produced by Stage 1
-            save:   If True, saves to output/stories/<slug>_refined.json
+        If main_character is provided, the flux_anchor is enforced in every image
+        prompt after each pass — Claude cannot drift the character appearance.
         """
+        import math
+        SCENES_PER_PASS = 6
+
+        n_scenes = len(script.scenes)
+        n_passes = math.ceil(n_scenes / SCENES_PER_PASS)
+
         print(f"\n{'='*60}")
         print(f"  Stage 2: Refining '{script.title}'")
         print(f"{'='*60}")
         print(f"  Model    : {config.STORY_MODEL}")
-        print(f"  Strategy : two-pass split (6 scenes per call)")
+        print(f"  Scenes   : {n_scenes}")
+        print(f"  Passes   : {n_passes}  ({SCENES_PER_PASS} scenes each)")
         print(f"  Max tok  : {config.REFINE_MAX_TOKENS} per pass")
+        if main_character:
+            print(f"  Character: {main_character['name']} (flux anchor locked)")
         print()
 
         t_start = time.time()
+        raw_passes = []
 
-        # ── Pass A: global fields + scenes 1–6 ───────────────────────────────
-        print("  Pass A (global fields + scenes 1-6)...", end="", flush=True)
-        script_a = _script_with_scenes(script, script.scenes[:6])
-        prompt_a = _build_refine_prompt(script_a, is_first_pass=True)
-        raw_a = self._call_claude(prompt_a)
-        print(f" done ({time.time()-t_start:.1f}s)")
+        for pass_num in range(n_passes):
+            slice_start = pass_num * SCENES_PER_PASS
+            slice_end   = slice_start + SCENES_PER_PASS
+            batch       = script.scenes[slice_start:slice_end]
+            is_first    = (pass_num == 0)
 
-        # ── Pass B: scenes 7–12 only ──────────────────────────────────────────
-        print("  Pass B (scenes 7-12)...", end="", flush=True)
-        t_b = time.time()
-        script_b = _script_with_scenes(script, script.scenes[6:])
-        prompt_b = _build_refine_prompt(script_b, is_first_pass=False)
-        raw_b = self._call_claude(prompt_b)
-        print(f" done ({time.time()-t_b:.1f}s)")
+            scene_nums = [s.scene_number for s in batch]
+            label = f"scenes {scene_nums[0]}-{scene_nums[-1]}"
+            if is_first:
+                label = "global fields + " + label
+
+            print(f"  Pass {pass_num + 1}/{n_passes} ({label})...", end="", flush=True)
+            t_pass = time.time()
+
+            script_batch = _script_with_scenes(script, batch)
+            prompt       = _build_refine_prompt(script_batch, is_first_pass=is_first)
+            raw          = self._call_claude(prompt)
+            raw_passes.append(raw)
+
+            print(f" done ({time.time() - t_pass:.1f}s)")
 
         elapsed = time.time() - t_start
 
-        # ── Merge passes ──────────────────────────────────────────────────────
+        # ── Merge all passes ──────────────────────────────────────────────────
         print("  Merging and validating...", end="", flush=True)
-        refined = self._merge_passes(raw_a, raw_b, script)
-        print(f" done")
+        refined = self._merge_all_passes(raw_passes, script)
+        print(" done")
 
         print(f"  Total time : {elapsed:.1f}s")
+
+        # ── Flux anchor enforcement ──────────────────────────────────────────
+        # If a locked character was passed, verify every scene image_prompt
+        # contains the flux_anchor. If Claude omitted it, append it now.
+        # This is the final guarantee of visual consistency across all scenes.
+        if main_character and main_character.get("flux_anchor"):
+            anchor       = main_character["flux_anchor"]
+            anchor_check = anchor[:30].lower()
+            fixed        = 0
+            updated_scenes = []
+            for scene in refined.scenes:
+                if anchor_check not in scene.image_prompt.lower():
+                    new_prompt = scene.image_prompt.rstrip(" .,") + f", {anchor}"
+                    updated_scenes.append(scene.model_copy(update={"image_prompt": new_prompt}))
+                    fixed += 1
+                else:
+                    updated_scenes.append(scene)
+            if fixed:
+                refined = refined.model_copy(update={"scenes": updated_scenes})
+                print(f"  ⚙️   Flux anchor injected into {fixed}/{len(refined.scenes)} scenes.")
+
+            # Enforce supporting character anchors in scenes that mention them by name
+            if supporting_characters:
+                for sup in supporting_characters:
+                    sup_anchor = sup.get("flux_anchor", "")
+                    sup_name   = sup.get("name", "").lower()
+                    if not sup_anchor:
+                        continue
+                    sup_check = sup_anchor[:30].lower()
+                    updated_scenes = []
+                    for scene in refined.scenes:
+                        prompt_lower = scene.image_prompt.lower()
+                        if sup_name in prompt_lower and sup_check not in prompt_lower:
+                            new_prompt = scene.image_prompt.rstrip(" .,") + f", {sup_anchor}"
+                            updated_scenes.append(scene.model_copy(update={"image_prompt": new_prompt}))
+                        else:
+                            updated_scenes.append(scene)
+                    refined = refined.model_copy(update={"scenes": updated_scenes})
 
         if save:
             path = self._save_refined(refined)
@@ -505,10 +568,10 @@ class SceneRefiner:
 
         return refined
 
-    def _merge_passes(self, raw_a: str, raw_b: str, original: VideoScript) -> RefinedScript:
+    def _merge_all_passes(self, raw_passes: list, original: VideoScript) -> RefinedScript:
         """
-        Parse Pass A (global fields + scenes 1-6) and Pass B (scenes 7-12),
-        then merge into one complete RefinedScript.
+        Parse every pass and merge into one complete RefinedScript.
+        Pass 0 provides global fields; all passes contribute their scenes in order.
         """
         def parse_raw(raw: str) -> dict:
             text = raw.strip()
@@ -517,21 +580,25 @@ class SceneRefiner:
                 text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
             return json.loads(text)
 
-        try:
-            data_a = parse_raw(raw_a)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Pass A returned invalid JSON: {e}\nRaw (first 400 chars):\n{raw_a[:400]}")
+        parsed = []
+        for i, raw in enumerate(raw_passes):
+            try:
+                parsed.append(parse_raw(raw))
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Pass {i + 1} returned invalid JSON: {e}\n"
+                    f"Raw (first 400 chars):\n{raw[:400]}"
+                )
 
-        try:
-            data_b = parse_raw(raw_b)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Pass B returned invalid JSON: {e}\nRaw (first 400 chars):\n{raw_b[:400]}")
+        # Global fields come from Pass 0 (first pass)
+        merged = dict(parsed[0])
 
-        # Merge: take global fields from Pass A, all scenes from A + B
-        scenes_a = data_a.get("scenes", [])
-        scenes_b = data_b.get("scenes", [])
-        merged = dict(data_a)           # global fields from Pass A
-        merged["scenes"] = scenes_a + scenes_b  # 6 + 6 = 12 scenes
+        # Collect all scenes from every pass, in order
+        all_scenes = []
+        for data in parsed:
+            all_scenes.extend(data.get("scenes", []))
+
+        merged["scenes"] = all_scenes
 
         merged = self._normalize(merged, original)
 
@@ -542,8 +609,9 @@ class SceneRefiner:
 
         if len(refined.scenes) != config.NUM_SCENES:
             raise ValueError(
-                f"Expected {config.NUM_SCENES} scenes after merge, "
-                f"got {len(refined.scenes)} (Pass A: {len(scenes_a)}, Pass B: {len(scenes_b)})"
+                f"Expected {config.NUM_SCENES} scenes after merging {len(raw_passes)} passes, "
+                f"got {len(refined.scenes)}. "
+                f"Scene counts per pass: {[len(p.get('scenes', [])) for p in parsed]}"
             )
 
         return refined

@@ -42,10 +42,10 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Which stage to run (1–10)
-TEST_STAGE = 9
+TEST_STAGE = 1
 
 # Your story idea — used when LOAD_EXISTING_SLUG is None
-TEST_TOPIC    = "History of Belgium for kids"
+TEST_TOPIC    = "a tiny dragon who is afraid of fire"
 TEST_CATEGORY = None        # None = Claude auto-selects, or one of:
                             # "animal_adventure" | "friendship_and_emotions"
                             # "magic_and_fantasy" | "learning_and_educational"
@@ -53,7 +53,14 @@ TEST_CATEGORY = None        # None = Claude auto-selects, or one of:
 
 # After Stage 1 runs, paste the slug it prints here (e.g. "brave-little-dragon")
 # This reuses the saved script for all later stages — saves API calls and cost
-LOAD_EXISTING_SLUG = "leo-the-lions-adventure-through-belgium"   # e.g. "timmys-big-ship-adventure"
+LOAD_EXISTING_SLUG = None   # e.g. "timmys-big-ship-adventure"
+
+# ── CHARACTER SERIES ───────────────────────────────────────────────────────────
+# Set CHARACTER_ID to use a saved character (from characters/<id>.json).
+# Run  python character_manager.py create  first to create one.
+CHARACTER_ID             = None    # e.g. "leo" | None = Claude invents a new character
+SUPPORTING_CHARACTER_IDS = []      # e.g. ["bella"] | [] = no supporting chars
+LOG_EPISODE              = True    # Log this video to the character's series file
 
 # Video format — applies to Stages 1-3
 VIDEO_FORMAT      = "short"     # "short" = 60s Shorts / "long" = 8-15 min YouTube
@@ -98,6 +105,66 @@ import config
 # ─────────────────────────────────────────────────────────────────────────────
 #  RUNTIME CONFIG — apply video format and orientation before any stage runs
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _load_characters() -> tuple[dict | None, list[dict]]:
+    """
+    Resolve CHARACTER_ID into loaded character dicts.
+
+    CHARACTER_ID = None   → returns (None, []) — Claude invents the character freely
+    CHARACTER_ID = "leo"  → loads characters/leo.json
+    CHARACTER_ID = "new"  → interactive: shows existing characters, then either
+                            picks one or runs Claude character creator
+    """
+    if not CHARACTER_ID:
+        return None, []
+
+    from character_manager import (
+        load_character, load_supporting, list_characters,
+        create_character, print_series,
+    )
+
+    char_id = CHARACTER_ID
+
+    if char_id == "new":
+        # Interactive flow — show what exists, then ask
+        existing = list_characters()
+        print()
+        print("  ── Character Selection ──────────────────────────────")
+        if existing:
+            print(f"  Existing characters ({len(existing)}):")
+            for cid in existing:
+                try:
+                    c = load_character(cid)
+                    print(f"    [{cid}]  {c['name']:15s}  "
+                          f"Ep:{c.get('episode_count',0):3d}  "
+                          f"{c.get('series_name','')}")
+                except Exception:
+                    print(f"    [{cid}]  (error reading)")
+        else:
+            print("  No characters saved yet.")
+        print()
+        choice = input(
+            "  Type an existing ID to use it, or press Enter to create a new one: "
+        ).strip().lower()
+
+        if choice and choice in existing:
+            char_id = choice
+        else:
+            # Create new character interactively
+            print()
+            description = input("  Describe your character: ").strip()
+            series_name = input("  Series name: ").strip()
+            if not description or not series_name:
+                print("  Both fields required — aborting character creation.")
+                return None, []
+            char_data = create_character(description, series_name)
+            char_id   = char_data["id"]
+
+    # Load the resolved character
+    main = load_character(char_id)
+    supporting = load_supporting(SUPPORTING_CHARACTER_IDS) if SUPPORTING_CHARACTER_IDS else []
+    return main, supporting
+
 
 def apply_video_config():
     """Apply VIDEO_FORMAT and VIDEO_ORIENTATION to config at runtime."""
@@ -195,6 +262,15 @@ def test_stage_1():
     from pipeline.story_generator import StoryGenerator, print_script_summary
 
     gen = StoryGenerator()
+    main_char, supporting = _load_characters()
+
+    if main_char:
+        ep = main_char.get("episode_count", 0) + 1
+        print(f"  Character : {main_char['name']} — Episode {ep}")
+        print(f"  Series    : {main_char.get('series_name', '')}")
+        if supporting:
+            print(f"  Supporting: {', '.join(c['name'] for c in supporting)}")
+        print()
 
     if LOAD_EXISTING_SLUG:
         print(f"  Loading saved script: {LOAD_EXISTING_SLUG}")
@@ -204,6 +280,8 @@ def test_stage_1():
             topic=TEST_TOPIC,
             category=TEST_CATEGORY,
             save=SAVE_OUTPUT,
+            main_character=main_char,
+            supporting_characters=supporting if supporting else None,
         )
 
     if PRINT_JSON:
@@ -264,8 +342,14 @@ def test_stage_2():
     print(f"  Loaded: '{script.title}' ({len(script.scenes)} scenes)")
     print()
 
+    main_char, supporting = _load_characters()
     refiner = SceneRefiner()
-    refined = refiner.refine(script, save=SAVE_OUTPUT)
+    refined = refiner.refine(
+        script,
+        save=SAVE_OUTPUT,
+        main_character=main_char,
+        supporting_characters=supporting if supporting else None,
+    )
 
     if PRINT_JSON:
         separator("RAW REFINED JSON")
@@ -795,6 +879,18 @@ def test_stage_10():
     if url:
         print(f"  URL    : {url}")
     separator()
+
+    # Log episode to character series if CHARACTER_ID is set
+    if CHARACTER_ID and LOG_EPISODE and url:
+        from character_manager import log_episode
+        log_episode(
+            character_id=CHARACTER_ID,
+            title=refined.title,
+            slug=refined.slug,
+            topic=TEST_TOPIC,
+            youtube_url=url or "",
+        )
+
     return url
 
 

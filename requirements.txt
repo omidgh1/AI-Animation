@@ -20,3 +20,4 @@ aiohttp>=3.9.0             # Async HTTP calls
 requests>=2.31.0           # HTTP utility
 tqdm>=4.66.0               # Progress bars
 websocket-client>=1.6.0    # ComfyUI WebSocket (optional)
+beautifulsoup4>=4.14.0

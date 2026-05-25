@@ -44,6 +44,7 @@ from textwrap import dedent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config
+from prompts.loader import load_prompt
 
 CHARACTERS_DIR = Path("characters")
 CHARACTERS_DIR.mkdir(exist_ok=True)
@@ -72,53 +73,11 @@ REQUIRED_FIELDS = [
 #  CREATOR — Claude generates the full character JSON
 # ─────────────────────────────────────────────────────────────────────────────
 
-CREATOR_SYSTEM_PROMPT = dedent("""
-    You are a children's character designer specialising in cute animated characters
-    for YouTube Kids videos (ages 3-9). Your characters are used across an automated
-    AI video pipeline where visual consistency is critical — every episode must show
-    the SAME character with the SAME look.
-
-    When given a character description, you produce a complete character definition
-    JSON that will be embedded verbatim into image generation prompts (Flux/Stable
-    Diffusion) and story generation prompts (Claude).
-
-    DESIGN PRINCIPLES:
-    - Pixar/Disney style: round faces, big expressive eyes, soft shapes
-    - Simple colour palette (2-3 dominant colours max) so Flux stays consistent
-    - Distinctive feature: one unique visual detail that makes them recognisable
-      even in a tiny thumbnail (e.g. red scarf, star on forehead, mismatched socks)
-    - Age-appropriate: cute, safe, friendly, no sharp features or dark tones
-
-    OUTPUT FORMAT: Return ONLY valid JSON, no markdown, no explanation.
-    Start with { and end with }.
-""").strip()
+CREATOR_SYSTEM_PROMPT = load_prompt("character_system")
 
 
 def _creator_prompt(description: str, series_name: str) -> str:
-    return dedent(f"""
-        Create a complete character definition for this kids YouTube series character:
-
-        USER DESCRIPTION:
-        {description}
-
-        SERIES NAME: {series_name}
-
-        Generate the following JSON exactly:
-        {{
-          "name": "<character display name>",
-          "species": "<animal/creature type>",
-          "visual_description": "<full 60-80 word paragraph describing the character for a story writer. Include: species, size, fur/skin colour, eye colour and size, distinctive features, clothing/accessories, personality shown through appearance. Written as: 'NAME is a [description]...'>",
-          "flux_anchor": "<20-35 word Flux image anchor. CRITICAL: this is appended to EVERY scene prompt to lock in the character's look. Format: 'NAME: [distinctive visual features], [clothing], [colour], cute chibi Pixar style, consistent character design'>",
-          "personality": "<2-3 sentences describing personality, fears, goals, and how they react to problems. Used by Claude to write the story narration>",
-          "voice_style": "<one of: warm_and_gentle | energetic_and_bubbly | soft_and_shy | brave_and_bold | silly_and_funny>",
-          "color_palette": ["<dominant hex>", "<secondary hex>", "<accent hex>"],
-          "series_name": "{series_name}",
-          "tagline": "<one fun sentence that could be a series tagline>",
-          "catchphrase": "<short catchphrase the character says, in quotes, e.g. 'Adventure awaits!'>",
-          "typical_settings": ["<3 typical settings for stories with this character>"],
-          "story_themes": ["<5 good story themes that fit this character>"]
-        }}
-    """).strip()
+    return load_prompt("character_user", description=description, series_name=series_name)
 
 
 def create_character(description: str, series_name: str) -> dict:

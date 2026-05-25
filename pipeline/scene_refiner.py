@@ -33,78 +33,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from pipeline.models import VideoScript, RefinedScript, RefinedScene, SoundEffect
+from prompts.loader import load_prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PROMPTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = dedent("""
-    You are a senior art director and visual storyteller specialising in children's
-    animated short-form video for YouTube Shorts, TikTok, and Instagram Reels.
-
-    You receive a kids' story script and your job is to elevate every scene's
-    visual quality for AI image generation using Fal.ai Flux 1.1 Pro.
-
-    YOUR RESPONSIBILITIES:
-
-    1. ON_SCREEN_TEXT — rewrite every scene's subtitle to be:
-       - 1 to 4 words maximum
-       - Emotionally punchy and age-appropriate
-       - The peak emotional beat of that scene
-       - Written in ALL CAPS for hook scenes, Title Case for calm scenes
-       - Examples of GOOD on_screen_text:
-           "OH NO!" / "Try Again!" / "YOU DID IT!" / "Best Friends!" /
-           "So Scary..." / "ALMOST THERE!" / "The Secret!" / "Sweet Dreams!"
-       - Examples of BAD on_screen_text (do not produce):
-           "Spark the tiny dragon!" (too long, mechanical slice of narration)
-           "But when Dragon School!" (grammatically broken)
-
-    2. IMAGE_PROMPT — enhance every scene prompt to include:
-       - Character: exact physical description verbatim from main_character field
-       - Action: precise body language and gesture
-       - Expression: specific facial emotion (e.g. "eyes wide with wonder, mouth open in a small O")
-       - Foreground: what is immediately in front
-       - Background: layered depth — near, mid, far elements
-       - Lighting: specific quality (e.g. "warm golden hour sidelight", "soft diffused morning glow",
-                   "cool moonlight with rim lighting", "magical sparkle particles catching light")
-       - Atmosphere: mood-enhancing details (mist, lens flare, bokeh, particle effects)
-       - ALWAYS end with the global_style_suffix exactly as provided
-       - 80 to 140 words total
-
-    3. NEGATIVE_PROMPT — for every scene, write what to exclude:
-       - Always include: "text, words, letters, watermark, signature, ugly, deformed,
-         extra limbs, bad anatomy, blurry, low quality, dark, scary, violent,
-         adult content, realistic photo, 3d render, anime, manga, grainy, noise"
-       - Add scene-specific exclusions (e.g. for a night scene: "bright daylight";
-         for a calm scene: "fire, explosions, chaos")
-
-    4. COLOUR_PALETTE — choose 3 hex colour codes that define each scene's mood:
-       - Use warm colours (oranges, yellows, pinks) for happy/excited scenes
-       - Use cool colours (blues, purples) for sad/scared scenes
-       - Use teals and greens for calm/magical scenes
-       - Use bright saturated rainbow colours for celebration scenes
-       - Colours must look good together and reflect the emotion
-
-    5. GLOBAL FIELDS — for the whole video:
-       - global_style_suffix: one consistent art style string for ALL scene prompts
-       - global_negative_prompt: baseline exclusions for ALL scenes
-       - thumbnail_concept: rewrite to be CTR-optimised — child sees it and MUST click
-       - thumbnail_negative_prompt: exclusions for the thumbnail
-       - colour_story: one sentence arc of colours across the whole video
-
-    FLUX 1.1 PRO PROMPT TIPS:
-       - Flux responds well to: specific textures, lighting adjectives, composition terms
-       - Use terms like: "rim lighting", "volumetric light rays", "bokeh background",
-         "shallow depth of field", "rule of thirds composition", "leading lines",
-         "colour grading: warm/cool/pastel"
-       - Flux does NOT need negative prompts as strongly as SD, but they still help
-       - Keep character description consistent — copy it verbatim every time
-
-    OUTPUT FORMAT:
-    Return ONLY valid JSON matching the schema. No markdown, no explanation.
-    Start with { and end with }.
-""").strip()
+SYSTEM_PROMPT = load_prompt("refiner_system")
 
 
 
@@ -187,33 +123,18 @@ def _build_refine_prompt(script: VideoScript, is_first_pass: bool = True) -> str
             "No global fields needed — just the scenes array."
         )
 
-    return f"""Refine these kids video scenes for high-quality AI image generation with Fal.ai Flux.
-
-STORY CONTEXT:
-Title         : {script.title}
-Main character: {script.main_character}
-Setting       : {script.setting}
-Moral         : {script.moral}
-Music mood    : {script.background_music_mood}
-
-SCENES TO REFINE ({scene_range}):
-{json.dumps(scenes_summary, indent=2)}
-
-INSTRUCTIONS:
-1. Keep narration text EXACTLY unchanged — not a single word modified
-2. Keep scene_number, camera_movement, duration_seconds, emotion, sound_effects, transition UNCHANGED
-3. Rewrite on_screen_text: 1-4 punchy emotional words (e.g. "OH NO!", "YOU DID IT!", "So scared...")
-4. Enhance image_prompt to 80-140 words with: character description verbatim, specific action,
-   facial expression, foreground/mid/background depth, lighting quality, atmosphere details
-5. Add negative_prompt: start with global exclusions, add scene-specific ones
-6. Add colour_palette: 3 hex codes matching the scene emotion
-7. Set fal_aspect_ratio: "9:16" always
-{extra_instruction}
-
-REQUIRED OUTPUT STRUCTURE:
-{output_spec}
-
-Return ONLY valid JSON. No markdown fences. No explanation. Start with {{ end with }}."""
+    return load_prompt(
+        "refiner_user",
+        title=script.title,
+        main_character=script.main_character,
+        setting=script.setting,
+        moral=script.moral,
+        music_mood=script.background_music_mood,
+        scene_range=scene_range,
+        scenes_json=json.dumps(scenes_summary, indent=2),
+        extra_instruction=extra_instruction,
+        output_spec=output_spec,
+    )
 
 
 class SceneRefiner:

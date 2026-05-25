@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from pipeline.models import VideoScript
+from prompts.loader import load_prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,66 +117,13 @@ def _build_system_prompt(num_scenes: int) -> str:
             num_scenes, emotions[-1],
         )
 
-    # ── Assemble final prompt string (no f-string, no triple-quote issues) ──────
-    lines = [
-        "You are a professional children's story writer and video script creator.",
-        "You specialise in writing animated video scripts for children aged 3-9,",
-        "optimised for YouTube Shorts, TikTok, Instagram Reels, and long-form YouTube.",
-        "",
-        "YOUR JOB:",
-        "Given a story topic, produce a complete, structured video script as valid JSON.",
-        "",
-        "VIDEO SPECIFICATIONS:",
-        "- Total scenes: EXACTLY {} scenes".format(num_scenes),
-        "- Duration: {}".format(duration_note),
-        "- Structure: {}".format(structure_note),
-        "",
-        "STRICT RULES FOR ALL CONTENT:",
-        "- Language must be simple enough for a 3-year-old to understand",
-        "- Maximum 20 words per narration line",
-        "- No scary, violent, or adult themes -- ever",
-        "- Every story MUST have a clear emotional arc: hook -> problem -> helper -> solution -> celebration",
-        "- Stories always end happily and positively",
-        "- The main character must be loveable, round-faced, and cute (think Pixar style)",
-        "- Use bright, warm, saturated colours in all image prompts",
-        "- Never mention brands, real people, or copyrighted characters",
-        "",
-        "SCENE STRUCTURE ({} scenes -- generate ALL of them):".format(num_scenes),
-        scene_structure,
-        "",
-        "CRITICAL EMOTION RULES:",
-        "- Every scene MUST have the correct emotion field as shown above",
-        "- Do NOT use 'happy' for all scenes -- this breaks voice selection",
-        "- The emotion field drives which voice tone ElevenLabs uses for narration",
-        "",
-        "IMAGE PROMPT RULES:",
-        "- Every image prompt must be 60-120 words",
-        "- Always include the main_character description verbatim",
-        "- Include: character action, facial expression, background setting, lighting mood",
-        "- Always end with: children's book illustration style, bright cheerful colours, "
-        "cute friendly design, 9:16 vertical composition",
-        "- No text or words in images",
-        "- No dark or scary imagery",
-        "",
-        "CAMERA MOVEMENT GUIDE:",
-        "- slow_zoom_in: for emotional close-up moments",
-        "- slow_zoom_out: for revealing a wider world",
-        "- pan_left / pan_right: for action/movement",
-        "- pan_up: for something rising (balloon, bird flying)",
-        "- pan_down: for something falling or looking down",
-        "- static: for calm, peaceful moments",
-        "",
-        "SOUND EFFECTS (use sparingly -- 0 to 2 per scene):",
-        'Good examples: "magic sparkle", "bird chirp", "happy bounce", "gentle wind",',
-        '"water splash", "leaf rustle", "celebratory pop", "soft footsteps",',
-        '"heart beat", "surprised gasp", "giggle", "applause"',
-        "",
-        "OUTPUT FORMAT:",
-        "Return ONLY valid JSON matching the schema provided. No markdown, no explanation,",
-        "no code fences. Start your response with { and end with }.",
-        "YOU MUST GENERATE EXACTLY {} SCENES -- not fewer, not more.".format(num_scenes),
-    ]
-    return NL.join(lines)
+    return load_prompt(
+        "story_system",
+        num_scenes=num_scenes,
+        duration_note=duration_note,
+        structure_note=structure_note,
+        scene_structure=scene_structure,
+    )
 
 # Build system prompt using current config
 SYSTEM_PROMPT = _build_system_prompt(config.NUM_SCENES)
@@ -318,30 +266,22 @@ class StoryGenerator:
 
         char_section = ""
         if character_block:
-            char_section = f"""
-{character_block}
+            char_section = (
+                f"{character_block}\n\n"
+                "IMPORTANT: The character definitions above are LOCKED.\n"
+                "Copy the flux_anchor verbatim into every scene's image_prompt field.\n"
+                "Use the visual_description verbatim as the main_character field.\n"
+                "Do NOT change hair colour, eye colour, clothing, or any other feature."
+            )
 
-IMPORTANT: The character definitions above are LOCKED.
-Copy the flux_anchor verbatim into every scene's image_prompt field.
-Use the visual_description verbatim as the main_character field.
-Do NOT change hair colour, eye colour, clothing, or any other feature.
-"""
-
-        return dedent(f"""
-            Create a complete kids' video script for this topic:
-
-            TOPIC: {topic}
-            {category_hint}
-            TARGET AUDIENCE: Children aged 3–9
-            VIDEO LENGTH: ~{config.TARGET_VIDEO_SEC} seconds (exactly {config.NUM_SCENES} scenes)
-            FORMAT: YouTube Shorts / TikTok / Instagram Reels (vertical 9:16)
-            {char_section}
-            Remember:
-            - Start with a HOOK in scene 1 — jump straight into the action
-            - Keep all narration under 20 words per scene
-            - Use the full emotional arc: problem → struggle → helper → solution → celebration
-            - Return ONLY valid JSON, nothing else
-        """).strip()
+        return load_prompt(
+            "story_user",
+            topic=topic,
+            category_hint=category_hint,
+            target_duration=config.TARGET_VIDEO_SEC,
+            num_scenes=config.NUM_SCENES,
+            char_section=char_section,
+        )
 
     @retry(
         stop=stop_after_attempt(config.MAX_RETRIES),

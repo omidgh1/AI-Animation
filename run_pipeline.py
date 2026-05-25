@@ -34,13 +34,25 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── STORY ─────────────────────────────────────────────────────────────────────
-TOPIC    = "Belgium History for kids"   # Your one-line story idea
+TOPIC    = "Titanic story for kids"   # Your one-line story idea
 CATEGORY = None                        # None = Claude auto-selects, or set one:
                                        # "animal_adventure"
                                        # "friendship_and_emotions"
                                        # "magic_and_fantasy"
                                        # "learning_and_educational"
                                        # "bedtime_and_calming"
+
+# ── CHARACTER SERIES ───────────────────────────────────────────────────────────
+# Set CHARACTER_ID to use a saved character across all videos in a series.
+# The character's visual description and flux_anchor are locked into Stage 1 & 2
+# so every image shows the same character consistently.
+#
+# First time: run  python character_manager.py create  to make a character.
+# Then set CHARACTER_ID = "leo" (or whatever ID was assigned).
+#
+CHARACTER_ID             = None        # e.g. "leo" | None = Claude invents a character
+SUPPORTING_CHARACTER_IDS = []          # e.g. ["bella", "timmy"] | [] = no supporting chars
+LOG_EPISODE              = True        # True = log this video to the character's series file
 
 # ── VIDEO LENGTH ───────────────────────────────────────────────────────────────
 VIDEO_FORMAT = "short"                 # "short" = 60s Shorts / "long" = 8-15 min
@@ -175,13 +187,76 @@ def apply_video_config():
           f"max_tokens={config.STORY_MAX_TOKENS}")
 
 
+def _load_characters() -> tuple[dict | None, list[dict]]:
+    """
+    Resolve CHARACTER_ID into loaded character dicts.
+
+    CHARACTER_ID = None   → returns (None, []) — Claude invents the character freely
+    CHARACTER_ID = "leo"  → loads characters/leo.json
+    CHARACTER_ID = "new"  → interactive: shows existing characters, then either
+                            picks one or runs Claude character creator
+    """
+    if not CHARACTER_ID:
+        return None, []
+
+    from character_manager import (
+        load_character, load_supporting, list_characters, create_character,
+    )
+
+    char_id = CHARACTER_ID
+
+    if char_id == "new":
+        existing = list_characters()
+        print()
+        print("  ── Character Selection ──────────────────────────────")
+        if existing:
+            print(f"  Existing characters ({len(existing)}):")
+            for cid in existing:
+                try:
+                    c = load_character(cid)
+                    print(f"    [{cid}]  {c['name']:15s}  "
+                          f"Ep:{c.get('episode_count',0):3d}  "
+                          f"{c.get('series_name','')}")
+                except Exception:
+                    print(f"    [{cid}]  (error reading)")
+        else:
+            print("  No characters saved yet.")
+        print()
+        choice = input(
+            "  Type an existing ID to use it, or press Enter to create a new one: "
+        ).strip().lower()
+
+        if choice and choice in existing:
+            char_id = choice
+        else:
+            print()
+            description = input("  Describe your character: ").strip()
+            series_name = input("  Series name: ").strip()
+            if not description or not series_name:
+                print("  Both fields required — aborting character creation.")
+                return None, []
+            char_data = create_character(description, series_name)
+            char_id   = char_data["id"]
+
+    main = load_character(char_id)
+    supporting = load_supporting(SUPPORTING_CHARACTER_IDS) if SUPPORTING_CHARACTER_IDS else []
+    return main, supporting
+
+
 def run_stage_1() -> "VideoScript":
     from pipeline.story_generator import StoryGenerator
     gen = StoryGenerator()
     if LOAD_EXISTING_SLUG:
         print(f"  Loading existing script: {LOAD_EXISTING_SLUG}")
         return StoryGenerator.load_script(LOAD_EXISTING_SLUG)
-    return gen.generate(topic=TOPIC, category=CATEGORY, save=True)
+    main_char, supporting = _load_characters()
+    return gen.generate(
+        topic=TOPIC,
+        category=CATEGORY,
+        save=True,
+        main_character=main_char,
+        supporting_characters=supporting if supporting else None,
+    )
 
 
 def run_stage_2(script) -> "RefinedScript":
@@ -191,7 +266,13 @@ def run_stage_2(script) -> "RefinedScript":
             return SceneRefiner.load_refined(LOAD_EXISTING_SLUG)
         except FileNotFoundError:
             pass
-    return SceneRefiner().refine(script, save=True)
+    main_char, supporting = _load_characters()
+    return SceneRefiner().refine(
+        script,
+        save=True,
+        main_character=main_char,
+        supporting_characters=supporting if supporting else None,
+    )
 
 
 def run_stage_3(refined) -> list:
@@ -404,14 +485,26 @@ def main():
             }
 
     # ── Stage 11 — YouTube Upload ─────────────────────────────────────────────
+    youtube_url = ""
     if RUN_STAGE_11:
         separator("Stage 11 — YouTube Upload")
         t = time.time()
-        url = run_stage_11(refined, meta)
-        results["stage_11"] = {"url": url, "time": round(time.time() - t, 1)}
+        youtube_url = run_stage_11(refined, meta)
+        results["stage_11"] = {"url": youtube_url, "time": round(time.time() - t, 1)}
         print(f"  ✅  Uploaded [{results['stage_11']['time']}s]")
     else:
         print("\n  ⏩  Stage 11 skipped (set RUN_STAGE_11 = True to auto-upload)")
+
+    # ── Log episode to character series file ──────────────────────────────────
+    if CHARACTER_ID and LOG_EPISODE and refined:
+        from character_manager import log_episode
+        log_episode(
+            character_id=CHARACTER_ID,
+            title=refined.title,
+            slug=refined.slug,
+            topic=TOPIC,
+            youtube_url=youtube_url,
+        )
 
     # ── Final Summary ─────────────────────────────────────────────────────────
     total_time = time.time() - t_total

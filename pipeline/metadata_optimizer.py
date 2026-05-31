@@ -28,33 +28,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from pipeline.models import RefinedScript
+from prompts.loader import load_prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  METADATA OPTIMIZER
 # ─────────────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = dedent("""
-    You are a YouTube SEO specialist and viral content strategist for kids channels.
-    You have deep knowledge of the YouTube Kids algorithm, what parents search for,
-    and what titles/thumbnails get clicked by children aged 3-9.
-
-    Your job: given a kids animated story script, generate fully optimised YouTube
-    metadata that maximises CTR, watch time, and discoverability.
-
-    YOUTUBE KIDS ALGORITHM FACTS:
-    - Titles with character names + emotional words perform best ("Timmy SAVES the day!")
-    - Numbers in titles increase CTR ("5 Brave Friends", "12 Magical Scenes")
-    - ALL CAPS one word creates urgency without clickbait penalty
-    - Description first 3 lines appear in search — make them count
-    - Tags: mix 5 broad (kids stories, animated stories) + 20 niche + 25 specific
-    - Best upload times for kids: Saturday 7-9am, Sunday 8-10am (parent's timezone)
-    - Chapters boost watch time by 15-25% on long videos
-    - End screens with "Watch next" suggestions increase session time
-
-    OUTPUT FORMAT: Return ONLY valid JSON, no markdown, no explanation.
-    Start with { and end with }.
-""").strip()
+SYSTEM_PROMPT = load_prompt("metadata_system")
 
 
 def _build_prompt(refined: RefinedScript, video_duration_sec: int, is_long: bool) -> str:
@@ -74,76 +55,21 @@ def _build_prompt(refined: RefinedScript, video_duration_sec: int, is_long: bool
     )
 
     include_val = "true" if is_long else "false"
-    return dedent(f"""
-        Generate viral YouTube metadata for this kids animated story:
-
-        STORY DETAILS:
-        Title         : {refined.title}
-        Moral         : {refined.moral}
-        Character     : {refined.main_character}
-        Category      : {refined.category}
-        Music mood    : {refined.background_music_mood}
-        Duration      : {duration_str}
-        Is long video : {is_long} (long = 8+ minutes, unlocks mid-roll ads)
-
-        NARRATION PREVIEW (first 4 scenes):
-        {narration_preview}
-
-        ALL SCENES:
-        {scene_list}
-
-        EXISTING DESCRIPTION (from story generation):
-        {refined.youtube_description}
-
-        EXISTING TAGS:
-        {", ".join(refined.youtube_tags)}
-
-        REQUIRED JSON OUTPUT:
-        {{
-          "title_primary": "<main title — max 60 chars, character name + emotional hook>",
-          "title_variants": [
-            "<alt title 1 — different emotional angle>",
-            "<alt title 2 — question format>",
-            "<alt title 3 — number/list format>"
-          ],
-          "description_full": "<full YouTube description, 800-1000 chars. First 3 lines are the hook. Include story summary, moral, parent note, Music by Bensound.com credit, and 10 hashtags at end>",
-          "description_short": "<150 char version for Shorts — punchy, ends with hashtags>",
-          "tags": [
-            "<50 tags total: 5 ultra-broad, 20 mid-tier, 25 specific. No duplicates. Mix singular/plural. Max 500 chars total>",
-            "..."
-          ],
-          "chapters": {{"include": {include_val}, "list": [
-            {{"time": "0:00", "title": "<chapter title>"}},
-            {{"time": "1:00", "title": "<chapter title>"}},
-            "..."
-          ]}},
-          "thumbnail_text_options": [
-            "<option 1 — 3-5 words, CAPS for key word>",
-            "<option 2 — different emotional angle>",
-            "<option 3 — character name focus>"
-          ],
-          "best_upload_time": {{
-            "day": "<best day of week>",
-            "time_utc": "<HH:MM UTC>",
-            "reason": "<one sentence why>"
-          }},
-          "end_screen_suggestions": [
-            "<suggestion 1 — what video type to show next>",
-            "<suggestion 2>",
-            "<suggestion 3>"
-          ],
-          "cards_suggestions": [
-            "<card 1 — timestamp and what to link>",
-            "<card 2>"
-          ],
-          "category_id": "<YouTube category ID as string: 20=Gaming, 22=People&Blogs, 24=Entertainment, 27=Education, 28=Science&Tech>",
-          "made_for_kids": true,
-          "language": "en",
-          "viral_score_estimate": "<1-10 score with one sentence explanation>",
-          "seo_keywords_primary": ["<top 5 keywords parents would search>"],
-          "playlist_suggestion": "<name of playlist this video should be added to>"
-        }}
-    """).strip()
+    return load_prompt(
+        "metadata_user",
+        title=refined.title,
+        moral=refined.moral,
+        character=refined.main_character,
+        category=refined.category,
+        music_mood=refined.background_music_mood,
+        duration_str=duration_str,
+        is_long=is_long,
+        narration_preview=narration_preview,
+        scene_list=scene_list,
+        existing_description=refined.youtube_description,
+        existing_tags=", ".join(refined.youtube_tags),
+        include_val=include_val,
+    )
 
 
 class MetadataOptimizer:

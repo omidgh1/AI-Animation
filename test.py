@@ -45,7 +45,7 @@ from pathlib import Path
 TEST_STAGE = 1
 
 # Your story idea — used when LOAD_EXISTING_SLUG is None
-TEST_TOPIC    = "a tiny dragon who is afraid of fire"
+TEST_TOPIC    = "Ellie uses her tiny trunk to save a lost butterfly"
 TEST_CATEGORY = None        # None = Claude auto-selects, or one of:
                             # "animal_adventure" | "friendship_and_emotions"
                             # "magic_and_fantasy" | "learning_and_educational"
@@ -53,14 +53,18 @@ TEST_CATEGORY = None        # None = Claude auto-selects, or one of:
 
 # After Stage 1 runs, paste the slug it prints here (e.g. "brave-little-dragon")
 # This reuses the saved script for all later stages — saves API calls and cost
-LOAD_EXISTING_SLUG = None   # e.g. "timmys-big-ship-adventure"
+LOAD_EXISTING_SLUG = None # e.g. "timmys-big-ship-adventure"
 
 # ── CHARACTER SERIES ───────────────────────────────────────────────────────────
 # Set CHARACTER_ID to use a saved character (from characters/<id>.json).
-# Run  python character_manager.py create  first to create one.
-CHARACTER_ID             = None    # e.g. "leo" | None = Claude invents a new character
+# Set CHARACTER_ID = None to let Claude invent a fresh character.
+# Set AUTO_SAVE_CHARACTER = True to automatically save that new character
+#   after Stage 1 so you can reuse it next time with CHARACTER_ID = "<id>".
+CHARACTER_ID             = "ellie"    # e.g. "spark" | None = Claude invents a new character
 SUPPORTING_CHARACTER_IDS = []      # e.g. ["bella"] | [] = no supporting chars
 LOG_EPISODE              = True    # Log this video to the character's series file
+AUTO_SAVE_CHARACTER      = True    # True = auto-save new character after Stage 1
+                                   #        (only applies when CHARACTER_ID = None)
 
 # Video format — applies to Stages 1-3
 VIDEO_FORMAT      = "short"     # "short" = 60s Shorts / "long" = 8-15 min YouTube
@@ -118,7 +122,7 @@ def _load_characters() -> tuple[dict | None, list[dict]]:
     if not CHARACTER_ID:
         return None, []
 
-    from character_manager import (
+    from pipeline.character_manager import (
         load_character, load_supporting, list_characters,
         create_character, print_series,
     )
@@ -164,6 +168,42 @@ def _load_characters() -> tuple[dict | None, list[dict]]:
     main = load_character(char_id)
     supporting = load_supporting(SUPPORTING_CHARACTER_IDS) if SUPPORTING_CHARACTER_IDS else []
     return main, supporting
+
+
+def _auto_save_character(script) -> str | None:
+    """
+    Auto-save the character Claude invented in Stage 1 to characters/<id>.json.
+    Called after Stage 1 when CHARACTER_ID is None and AUTO_SAVE_CHARACTER is True.
+    Uses the main_character description from the script and derives a series name
+    from the character's name, then calls create_character() to generate and save
+    the full character card (flux anchor, personality, palette, etc.).
+    Returns the new character ID, or None if saving failed.
+    """
+    from pipeline.character_manager import create_character
+
+    description = script.main_character.strip()
+    # Derive series name from character's first name  e.g. "Spark's Adventures"
+    first_name  = description.split(",")[0].split(" is ")[0].strip()
+    series_name = f"{first_name}'s Adventures"
+
+    print(f"\n  ─── AUTO-SAVING CHARACTER ──────────────────────────────")
+    print(f"  Character   : {description[:80]}...")
+    print(f"  Series name : {series_name}")
+    print(f"  (Claude will generate flux anchor, palette, personality...)")
+    print()
+
+    try:
+        char = create_character(description, series_name)
+        char_id = char["id"]
+        print(f"\n  ✅  Character saved!  For next episode, set:")
+        print(f'      CHARACTER_ID = "{char_id}"')
+        print(f"  ────────────────────────────────────────────────────────")
+        return char_id
+    except Exception as e:
+        print(f"  ⚠️  Auto-save failed (non-fatal): {e}")
+        print(f"  You can still create manually:  python pipeline/character_manager.py create")
+        print(f"  ────────────────────────────────────────────────────────")
+        return None
 
 
 def apply_video_config():
@@ -315,6 +355,10 @@ def test_stage_1():
         print(f"  Set LOAD_EXISTING_SLUG = \"{script.slug}\"")
         print(f"  Then run Stage 2")
         print(f"  ────────────────────────────────────────────────────")
+
+    # Auto-save the character Claude invented so it can be reused in future episodes
+    if AUTO_SAVE_CHARACTER and not CHARACTER_ID and SAVE_OUTPUT:
+        _auto_save_character(script)
 
     separator()
     return script
@@ -882,7 +926,7 @@ def test_stage_10():
 
     # Log episode to character series if CHARACTER_ID is set
     if CHARACTER_ID and LOG_EPISODE and url:
-        from character_manager import log_episode
+        from pipeline.character_manager import log_episode
         log_episode(
             character_id=CHARACTER_ID,
             title=refined.title,

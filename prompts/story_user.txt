@@ -1,0 +1,13 @@
+Create a complete kids' video script for this topic:
+
+TOPIC: $topic
+$category_hint
+TARGET AUDIENCE: Children aged 3–9
+VIDEO LENGTH: ~$target_duration seconds (exactly $num_scenes scenes)
+FORMAT: YouTube Shorts / TikTok / Instagram Reels (vertical 9:16)
+$char_section
+Remember:
+- Start with a HOOK in scene 1 — jump straight into the action
+- Keep all narration under 20 words per scene
+- Use the full emotional arc: problem → struggle → helper → solution → celebration
+- Return ONLY valid JSON, nothing else

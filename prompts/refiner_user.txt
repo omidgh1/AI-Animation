@@ -1,0 +1,27 @@
+Refine these kids video scenes for high-quality AI image generation with Fal.ai Flux.
+
+STORY CONTEXT:
+Title         : $title
+Main character: $main_character
+Setting       : $setting
+Moral         : $moral
+Music mood    : $music_mood
+
+SCENES TO REFINE ($scene_range):
+$scenes_json
+
+INSTRUCTIONS:
+1. Keep narration text EXACTLY unchanged — not a single word modified
+2. Keep scene_number, camera_movement, duration_seconds, emotion, sound_effects, transition UNCHANGED
+3. Rewrite on_screen_text: 1-4 punchy emotional words (e.g. "OH NO!", "YOU DID IT!", "So scared...")
+4. Enhance image_prompt to 80-140 words with: character description verbatim, specific action,
+   facial expression, foreground/mid/background depth, lighting quality, atmosphere details
+5. Add negative_prompt: start with global exclusions, add scene-specific ones
+6. Add colour_palette: 3 hex codes matching the scene emotion
+7. Set fal_aspect_ratio: "9:16" always
+$extra_instruction
+
+REQUIRED OUTPUT STRUCTURE:
+$output_spec
+
+Return ONLY valid JSON. No markdown fences. No explanation. Start with { end with }.

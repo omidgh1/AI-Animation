@@ -41,17 +41,11 @@ class StoryScene(BaseModel):
 class VideoScript(BaseModel):
     title: str
     slug: str
-    category: Literal[
-        "animal_adventure", "friendship_and_emotions", "magic_and_fantasy",
-        "learning_and_educational", "bedtime_and_calming",
-    ]
+    category: str   # subject-specific; enum enforced by Claude schema, not hardcoded
     moral: str
     main_character: str
     setting: str
-    background_music_mood: Literal[
-        "playful", "adventurous", "magical", "calm_and_soothing",
-        "dramatic", "funny", "heartwarming"
-    ]
+    background_music_mood: str   # subject-specific; enum enforced by Claude schema
     youtube_description: str
     youtube_tags: list[str]
     thumbnail_concept: str
@@ -115,17 +109,11 @@ class RefinedScript(BaseModel):
     # Carried over from Stage 1
     title: str
     slug: str
-    category: Literal[
-        "animal_adventure", "friendship_and_emotions", "magic_and_fantasy",
-        "learning_and_educational", "bedtime_and_calming",
-    ]
+    category: str   # subject-specific; enum enforced by Claude schema, not hardcoded
     moral: str
     main_character: str
     setting: str
-    background_music_mood: Literal[
-        "playful", "adventurous", "magical", "calm_and_soothing",
-        "dramatic", "funny", "heartwarming"
-    ]
+    background_music_mood: str   # subject-specific; enum enforced by Claude schema
     youtube_description: str
     youtube_tags: list[str]
 

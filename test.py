@@ -41,30 +41,42 @@ from pathlib import Path
 #  ✏️  EDIT THESE — everything you need to configure
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── SUBJECT / NICHE ──────────────────────────────────────────────────────────
+# Controls which prompts are used. Must match a folder name in prompts/.
+#   "kids"    → default kids animated stories  (prompts/*.txt)
+#   "facts"   → surprising facts for adults    (prompts/facts/*.txt)
+#
+# To add a new niche (e.g. "finance"):
+#   1. Create folder: prompts/finance/
+#   2. Copy + edit any .txt files from prompts/facts/ as a starting point
+#   3. Change SUBJECT = "finance" here and run
+SUBJECT = "facts"
+
 # Which stage to run (1–10)
-TEST_STAGE = 1
+TEST_STAGE = 8
 
 # Your story idea — used when LOAD_EXISTING_SLUG is None
-TEST_TOPIC    = "Ellie uses her tiny trunk to save a lost butterfly"
-TEST_CATEGORY = None        # None = Claude auto-selects, or one of:
-                            # "animal_adventure" | "friendship_and_emotions"
-                            # "magic_and_fantasy" | "learning_and_educational"
-                            # "bedtime_and_calming"
+TEST_TOPIC    = "octopuses have three hearts and blue blood"
+TEST_CATEGORY = None        # None = Claude auto-selects
+                            # kids:  "animal_adventure" | "friendship_and_emotions" | "magic_and_fantasy" | "learning_and_educational" | "bedtime_and_calming"
+                            # facts: "science" | "history" | "nature" | "psychology" | "technology" | "space" | "animals" | "general"
 
 # After Stage 1 runs, paste the slug it prints here (e.g. "brave-little-dragon")
 # This reuses the saved script for all later stages — saves API calls and cost
-LOAD_EXISTING_SLUG = None # e.g. "timmys-big-ship-adventure"
+LOAD_EXISTING_SLUG = "octopuses-have-three-hearts-and-blue-blood" # e.g. "timmys-big-ship-adventure"
 
 # ── CHARACTER SERIES ───────────────────────────────────────────────────────────
-# Set CHARACTER_ID to use a saved character (from characters/<id>.json).
-# Set CHARACTER_ID = None to let Claude invent a fresh character.
-# Set AUTO_SAVE_CHARACTER = True to automatically save that new character
-#   after Stage 1 so you can reuse it next time with CHARACTER_ID = "<id>".
-CHARACTER_ID             = "ellie"    # e.g. "spark" | None = Claude invents a new character
-SUPPORTING_CHARACTER_IDS = []      # e.g. ["bella"] | [] = no supporting chars
-LOG_EPISODE              = True    # Log this video to the character's series file
-AUTO_SAVE_CHARACTER      = True    # True = auto-save new character after Stage 1
-                                   #        (only applies when CHARACTER_ID = None)
+# USE_CHARACTER = False  →  no character system at all (facts, finance, history, etc.)
+#                           Claude invents visuals freely per scene, no locked design
+# USE_CHARACTER = True   →  enables the character pipeline below
+#                           (kids series, branded mascots, recurring characters)
+USE_CHARACTER = False
+
+CHARACTER_ID             = None    # e.g. "spark" | None = Claude invents a new character
+SUPPORTING_CHARACTER_IDS = []         # e.g. ["bella"] | [] = no supporting chars
+LOG_EPISODE              = True       # Log this video to the character's series file
+AUTO_SAVE_CHARACTER      = True       # True = auto-save new character after Stage 1
+                                      #        (only applies when CHARACTER_ID = None)
 
 # Video format — applies to Stages 1-3
 VIDEO_FORMAT      = "short"     # "short" = 60s Shorts / "long" = 8-15 min YouTube
@@ -114,11 +126,15 @@ def _load_characters() -> tuple[dict | None, list[dict]]:
     """
     Resolve CHARACTER_ID into loaded character dicts.
 
+    USE_CHARACTER = False → returns (None, []) immediately — no character pipeline
     CHARACTER_ID = None   → returns (None, []) — Claude invents the character freely
     CHARACTER_ID = "leo"  → loads characters/leo.json
     CHARACTER_ID = "new"  → interactive: shows existing characters, then either
                             picks one or runs Claude character creator
     """
+    if not USE_CHARACTER:
+        return None, []
+
     if not CHARACTER_ID:
         return None, []
 
@@ -232,6 +248,25 @@ def apply_video_config():
     config.STORY_MAX_TOKENS = config.story_max_tokens_for(config.NUM_SCENES)
 
 
+# Apply subject/niche — must happen BEFORE pipeline modules are imported
+# so prompts/loader.py picks up config.SUBJECT when resolving prompt files.
+config.SUBJECT          = SUBJECT
+config.STORY_CATEGORIES = config._CATEGORIES_BY_SUBJECT.get(SUBJECT, config._CATEGORIES_BY_SUBJECT["kids"])
+config.MUSIC_MOODS      = config._MUSIC_MOODS_BY_SUBJECT.get(SUBJECT, config._MUSIC_MOODS_BY_SUBJECT["kids"])
+
+# Voice — pick adult or kids voices based on subject
+_voices = getattr(config, f"_VOICES_{SUBJECT.upper()}", config._VOICES_KIDS)
+config.VOICE_WARM_NARRATOR = _voices["warm_narrator"]
+config.VOICE_ENERGETIC     = _voices["energetic"]
+config.VOICE_CHARACTER     = _voices["character"]
+config.VOICE_DEFAULT       = _voices["warm_narrator"]
+config.VOICE_EMOTION_MAP   = getattr(config, f"_EMOTION_MAP_{SUBJECT.upper()}", config._EMOTION_MAP_KIDS)
+config.VOICE_SETTINGS      = getattr(config, f"_VOICE_SETTINGS_{SUBJECT.upper()}", config._VOICE_SETTINGS_KIDS)
+
+# Music — pick search keywords and volume matching the subject style
+config.MUSIC_MOOD_KEYWORDS = getattr(config, f"_MUSIC_KEYWORDS_{SUBJECT.upper()}", config._MUSIC_KEYWORDS_KIDS)
+config.MUSIC_VOLUME = 0.12 if SUBJECT != "kids" else 0.20   # quieter for adult narration
+
 apply_video_config()
 
 
@@ -254,7 +289,7 @@ def header():
         else f"~{total_sec // 60}m {total_sec % 60}s"
     )
     print("\n" + "═" * 60)
-    print("   🎬  AI Kids Video Generator — Test Runner")
+    print("   🎬  Video Generator — Test Runner")
     print("═" * 60)
     print(f"   Stage      : {TEST_STAGE}")
     print(f"   Topic      : {TEST_TOPIC}")
@@ -357,7 +392,7 @@ def test_stage_1():
         print(f"  ────────────────────────────────────────────────────")
 
     # Auto-save the character Claude invented so it can be reused in future episodes
-    if AUTO_SAVE_CHARACTER and not CHARACTER_ID and SAVE_OUTPUT:
+    if USE_CHARACTER and AUTO_SAVE_CHARACTER and not CHARACTER_ID and SAVE_OUTPUT:
         _auto_save_character(script)
 
     separator()
@@ -924,8 +959,8 @@ def test_stage_10():
         print(f"  URL    : {url}")
     separator()
 
-    # Log episode to character series if CHARACTER_ID is set
-    if CHARACTER_ID and LOG_EPISODE and url:
+    # Log episode to character series if character pipeline is active
+    if USE_CHARACTER and CHARACTER_ID and LOG_EPISODE and url:
         from pipeline.character_manager import log_episode
         log_episode(
             character_id=CHARACTER_ID,

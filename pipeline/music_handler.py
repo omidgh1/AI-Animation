@@ -32,6 +32,7 @@ import config
 # ─────────────────────────────────────────────────────────────────────────────
 
 BENSOUND_TRACKS = {
+    # ── Kids moods ──────────────────────────────────────────────────────────
     "playful": [
         "https://www.bensound.com/bensound-music/bensound-ukulele.mp3",
         "https://www.bensound.com/bensound-music/bensound-sunny.mp3",
@@ -59,6 +60,31 @@ BENSOUND_TRACKS = {
     "dramatic": [
         "https://www.bensound.com/bensound-music/bensound-epic.mp3",
         "https://www.bensound.com/bensound-music/bensound-adventure.mp3",
+    ],
+    # ── Facts / adult moods ──────────────────────────────────────────────────
+    "upbeat": [
+        "https://www.bensound.com/bensound-music/bensound-energy.mp3",
+        "https://www.bensound.com/bensound-music/bensound-upbeat.mp3",
+    ],
+    "tense": [
+        "https://www.bensound.com/bensound-music/bensound-suspense.mp3",
+        "https://www.bensound.com/bensound-music/bensound-epic.mp3",
+    ],
+    "mysterious": [
+        "https://www.bensound.com/bensound-music/bensound-mystery.mp3",
+        "https://www.bensound.com/bensound-music/bensound-suspense.mp3",
+    ],
+    "inspiring": [
+        "https://www.bensound.com/bensound-music/bensound-inspire.mp3",
+        "https://www.bensound.com/bensound-music/bensound-energy.mp3",
+    ],
+    "energetic": [
+        "https://www.bensound.com/bensound-music/bensound-energy.mp3",
+        "https://www.bensound.com/bensound-music/bensound-upbeat.mp3",
+    ],
+    "curious": [
+        "https://www.bensound.com/bensound-music/bensound-tenderness.mp3",
+        "https://www.bensound.com/bensound-music/bensound-mystery.mp3",
     ],
 }
 

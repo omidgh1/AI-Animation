@@ -147,18 +147,14 @@ def _build_schema(num_scenes: int) -> dict:
         "slug": {"type": "string"},
         "category": {
             "type": "string",
-            "enum": [
-                "animal_adventure", "friendship_and_emotions",
-                "magic_and_fantasy", "learning_and_educational", "bedtime_and_calming"
-            ]
+            "enum": config.STORY_CATEGORIES
         },
         "moral": {"type": "string"},
         "main_character": {"type": "string"},
         "setting": {"type": "string"},
         "background_music_mood": {
             "type": "string",
-            "enum": ["playful", "adventurous", "magical", "calm_and_soothing",
-                     "dramatic", "funny", "heartwarming"]
+            "enum": config.MUSIC_MOODS
         },
         "youtube_description": {"type": "string"},
         "youtube_tags": {"type": "array", "items": {"type": "string"}},
@@ -341,7 +337,7 @@ class StoryGenerator:
             data["slug"] = slug
 
         if "category" not in data:
-            data["category"] = "animal_adventure"
+            data["category"] = config.STORY_CATEGORIES[0]
 
         if "moral" not in data:
             data["moral"] = (
@@ -361,45 +357,64 @@ class StoryGenerator:
             data["background_music_mood"] = (
                 data.pop("music_mood", None)
                 or data.pop("mood", None)
-                or "playful"
+                or config.MUSIC_MOODS[0]
             )
 
         if "youtube_description" not in data:
-            data["youtube_description"] = (
-                f"Join us for a magical story: {data.get('title', 'A Kids Story')}! "
-                f"{data.get('moral', '')} "
-                "#KidsStories #AnimatedStories #BedtimeStories #ChildrensStories"
-            )
+            title = data.get('title', 'Untitled')
+            moral = data.get('moral', '')
+            if config.SUBJECT == "kids":
+                data["youtube_description"] = (
+                    f"Join us for a magical story: {title}! {moral} "
+                    "#KidsStories #AnimatedStories #BedtimeStories #ChildrensStories"
+                )
+            else:
+                data["youtube_description"] = (
+                    f"{title} — {moral} #Facts #DidYouKnow #MindBlowing"
+                )
 
         if "youtube_tags" not in data:
-            data["youtube_tags"] = [
-                "kids stories", "animated stories", "children's stories",
-                "bedtime stories", "kids cartoons", "moral stories for kids",
-                "short stories for kids", "educational videos for kids",
-            ]
+            if config.SUBJECT == "kids":
+                data["youtube_tags"] = [
+                    "kids stories", "animated stories", "children's stories",
+                    "bedtime stories", "kids cartoons", "moral stories for kids",
+                    "short stories for kids", "educational videos for kids",
+                ]
+            else:
+                data["youtube_tags"] = [
+                    "did you know", "amazing facts", "mind blowing facts",
+                    "facts", "interesting facts", "shorts", "viral facts",
+                ]
 
         if "thumbnail_concept" not in data:
-            char = data.get("main_character", "the main character")
-            title = data.get("title", "this story")
-            data["thumbnail_concept"] = (
-                f"{char} looking happy and excited, bright colourful background, "
-                f"title '{title}', bold friendly font, cheerful and eye-catching."
-            )
+            title = data.get("title", "this video")
+            if config.SUBJECT == "kids":
+                char = data.get("main_character", "the main character")
+                data["thumbnail_concept"] = (
+                    f"{char} looking happy and excited, bright colourful background, "
+                    f"title '{title}', bold friendly font, cheerful and eye-catching."
+                )
+            else:
+                data["thumbnail_concept"] = (
+                    f"Dramatic cinematic visual representing '{title}', "
+                    f"bold white text overlay, high contrast, curiosity-gap thumbnail."
+                )
 
         if "main_character" not in data:
-            data["main_character"] = "a small cute friendly animal with big eyes"
+            data["main_character"] = (
+                "a small cute friendly animal with big eyes"
+                if config.SUBJECT == "kids" else "narrator"
+            )
 
         # ── Enum guards ───────────────────────────────────────────────────────
 
-        valid_moods = {"playful","adventurous","magical","calm_and_soothing",
-                       "dramatic","funny","heartwarming"}
+        valid_moods = set(config.MUSIC_MOODS)
         if data.get("background_music_mood") not in valid_moods:
-            data["background_music_mood"] = "playful"
+            data["background_music_mood"] = config.MUSIC_MOODS[0]
 
-        valid_categories = {"animal_adventure","friendship_and_emotions","magic_and_fantasy",
-                            "learning_and_educational","bedtime_and_calming"}
+        valid_categories = set(config.STORY_CATEGORIES)
         if data.get("category") not in valid_categories:
-            data["category"] = "animal_adventure"
+            data["category"] = config.STORY_CATEGORIES[0]
 
         # ── Scene-level fixes ─────────────────────────────────────────────────
 
